@@ -4,9 +4,29 @@ from datetime import datetime, timedelta
 import pytz
 import gspread
 from google.oauth2.service_account import Credentials
+import streamlit.components.v1 as components  # NECESARIO PARA EL SCROLL
 
 # ==============================================================================
-# 1. CONFIGURACIÓN Y CONEXIÓN CON GOOGLE SHEETS
+# 1. TRUCOS DE MAGIA (JAVASCRIPT) PARA MÓVIL
+# ==============================================================================
+
+def scroll_to_top():
+    """
+    Inyecta un script invisible que fuerza al navegador a subir
+    al inicio de la página cada vez que se carga una sección.
+    Ayuda a que el menú no tape el contenido en celulares.
+    """
+    js = """
+    <script>
+        var body = window.parent.document.querySelector(".main");
+        console.log(body);
+        body.scrollTop = 0;
+    </script>
+    """
+    components.html(js, height=0)
+
+# ==============================================================================
+# 2. CONFIGURACIÓN Y CONEXIÓN CON GOOGLE SHEETS
 # ==============================================================================
 
 def conectar_google_sheets():
@@ -116,7 +136,7 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
 
 
 # ==============================================================================
-# 2. CALENDARIO Y HORARIOS (LÓGICA DE TIEMPO)
+# 3. LÓGICA DE TIEMPOS Y PUNTOS
 # ==============================================================================
 
 HORARIOS_CARRERA = {
@@ -215,7 +235,7 @@ def calcular_puntos(tipo, prediccion, oficial, colapinto_pred=None, colapinto_re
 
 
 # ==============================================================================
-# 3. CONFIGURACIÓN VISUAL Y ESTÉTICA (CSS COMPLETO)
+# 4. CONFIGURACIÓN VISUAL Y ESTÉTICA (CSS COMPLETO)
 # ==============================================================================
 
 st.set_page_config(
@@ -316,12 +336,32 @@ st.markdown("""
         background-color: #FFD700; 
         color: #000000; 
     }
+
+    /* 11. ESTILO PARA EL LINK DE REINICIO (NUEVO) */
+    .reset-link { 
+        display: block; 
+        text-align: center; 
+        padding: 10px; 
+        background-color: #BF00FF; 
+        color: white !important; 
+        text-decoration: none; 
+        border-radius: 8px; 
+        margin-bottom: 20px; 
+        font-weight: bold; 
+        border: 1px solid white;
+        transition: 0.3s;
+    }
+    .reset-link:hover { 
+        background-color: #FFD700; 
+        color: black !important; 
+        border-color: #BF00FF;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 4. DATOS DEL TORNEO
+# 5. DATOS DEL TORNEO
 # ==============================================================================
 
 CREDENCIALES = {
@@ -345,8 +385,7 @@ GPS_SPRINT = [
 ]
 
 GRILLA_2026 = {
-    
-"MCLAREN": ["Lando Norris", "Oscar Piastri"],
+    "MCLAREN": ["Lando Norris", "Oscar Piastri"],
 "RED BULL": ["Max Verstappen", "Isack Hadjar"],
 "MERCEDES": ["Kimi Antonelli", "George Russell"],
 "FERRARI": ["Charles Leclerc", "Lewis Hamilton"],
@@ -388,11 +427,15 @@ CALENDARIO_VISUAL = [
 
 
 # ==============================================================================
-# 5. APLICACIÓN PRINCIPAL
+# 6. APLICACIÓN PRINCIPAL
 # ==============================================================================
 
 def main():
     st.sidebar.title("🏁 MENU PRINCIPAL")
+    
+    # --- BOTÓN DE REINICIO/HOME (SOLUCIÓN MÓVIL) ---
+    st.sidebar.markdown('<a href="/" target="_self" class="reset-link">🔄 REINICIAR / HOME</a>', unsafe_allow_html=True)
+    
     st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/3/33/F1.svg", width=50)
     st.sidebar.markdown("---")
     
@@ -408,6 +451,10 @@ def main():
         "🏆 Muro de Campeones"
     ])
 
+    # --- ACTIVAR SCROLL AUTOMÁTICO (SOLUCIÓN MÓVIL) ---
+    # Esto fuerza al navegador a subir cada vez que Streamlit recarga
+    scroll_to_top()
+
     # --- INICIO ---
     if opcion == "🏠 Inicio & Historia":
         st.markdown("<h1 style='text-align: center; color: #FFD700;'>🏆 TORNEO DE PREDICCIONES FEFE WOLF 2026🏆</h1>", unsafe_allow_html=True)
@@ -415,7 +462,7 @@ def main():
         st.divider()
         st.markdown("<h2 style='text-align: center; color: #FFD700;'>📜 EL LEGADO DE FEFE WOLF</h2>", unsafe_allow_html=True)
         
-        # TEXTO COMPLETO RESTAURADO
+        # TEXTO COMPLETO RESTAURADO (VERSIÓN LARGA)
         st.markdown("""
         <div style='background-color: #111; padding: 20px; border-left: 5px solid #FFD700; border-radius: 10px;'>
         
@@ -688,8 +735,7 @@ def main():
         st.dataframe(
             df_pos, hide_index=True, width='stretch',
             column_order=["Piloto", "Puntos", "Qualys Ganadas", "Sprints Ganadas", "Carreras Ganadas", "Constructores Ganados"],
-            column_config={"Puntos": st.column_config.NumberColumn("🏆 Puntos", format="%d")}
-        )
+            column_config={"Puntos": st.column_config.NumberColumn("🏆 Puntos", format="%d")})
         st.info("ℹ️ Desempate: Se define por orden de llegada de la predicción.")
 
     # --- PARRILLA ---
@@ -763,7 +809,7 @@ def main():
             except: st.error("⚠️ Error: No se encontró 'IMAGENMURO.jfif'")
         
         st.divider()
-        st.subheader("👑 HALL OF FAME")
+        st.subheader("👑 SALON DE LA FAMA")
         
         st.markdown("""
         <div style='background-color: #001f3f; padding: 15px; border-radius: 10px; border: 1px solid #FFD700; margin-bottom: 15px; text-align: center;'>
@@ -781,7 +827,7 @@ def main():
         <div style='background-color: #001f3f; padding: 15px; border-radius: 10px; border: 1px solid #FFD700; margin-bottom: 15px; text-align: center;'>
             <h3 style='color: #FFD700; margin:0; text-shadow: 0 0 5px #BF00FF;'>🥇 FEFE WOLF</h3>
             <p style='color: #FFD700; font-size: 24px; margin: 5px 0;'>⭐</p>
-            <p style='color: #E0E0E0; font-size: 16px; margin:0;'>Campeón Fundador 2021</p>
+            <p style='color: #E0E0E0; font-size: 16px; margin:0;'>Campeón 2021</p>
         </div>
 
         <div style='background-color: #001f3f; padding: 15px; border-radius: 10px; border: 1px solid #FFD700; margin-bottom: 15px; text-align: center;'>
