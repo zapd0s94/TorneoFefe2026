@@ -47,6 +47,7 @@ def scroll_to_top():
 def conectar_google_sheets(nombre_hoja="sheet1"):
     """
     Conecta con la API de Google Sheets.
+    Permite elegir entre la hoja de 'Predicciones' (sheet1) o 'Posiciones'.
     """
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -62,12 +63,13 @@ def conectar_google_sheets(nombre_hoja="sheet1"):
             
         client = gspread.authorize(creds)
         
+        # Selección de hoja con manejo de errores
         try:
             if nombre_hoja == "Posiciones":
                 return client.open("TorneoFefe2026_DB").worksheet("Posiciones")
             else:
                 return client.open("TorneoFefe2026_DB").sheet1
-        except:
+        except gspread.WorksheetNotFound:
             return None
             
     except Exception as e:
@@ -75,7 +77,7 @@ def conectar_google_sheets(nombre_hoja="sheet1"):
 
 def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
     """
-    Guarda las predicciones en la hoja principal.
+    Guarda las predicciones en la hoja principal (sheet1).
     """
     sheet = conectar_google_sheets("sheet1")
     if sheet is None:
@@ -87,7 +89,7 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
         for fila in registros[1:]:
             if len(fila) > 3:
                 if fila[1] == usuario and fila[2] == gp and fila[3] == etapa:
-                    return False, f"⛔ ERROR: Ya enviaste la fase de {etapa} para el {gp}."
+                    return False, f"⛔ ERROR DE SEGURIDAD: Ya enviaste la fase de {etapa} para el {gp}. No se permiten reenvíos."
     except Exception as e:
         return False, f"Error técnico validando duplicados: {e}"
 
@@ -95,30 +97,44 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
     fecha_hora = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
+    # Estructura base: [Fecha, Usuario, GP, Etapa]
     row = [fecha_hora, usuario, gp, etapa]
     
+    # LÓGICA DE COLUMNAS (Mantiene compatibilidad con tu DB actual)
     if etapa == "QUALY":
+        # Indices 4 a 8: Q1-Q5
         row.extend([datos.get(i, "") for i in range(1, 6)])
+        # Indice 9: Colapinto Q
         row.append(datos.get("colapinto_q", ""))
+        # Relleno hasta el final
         row.extend([""] * 16)
 
     elif etapa == "SPRINT":
+        # Indices 4 a 9 vacíos (lugar de Qualy)
         row.extend([""] * 6)
+        # Indices 10 a 14: S1-S5
         row.extend([datos.get(i, "") for i in range(1, 6)])
+        # Relleno hasta el final
         row.extend([""] * 11)
 
     elif etapa == "CARRERA":
+        # Indices 4 a 14 vacíos (lugar de Qualy + Sprint)
         row.extend([""] * 11)
+        # Indices 15 a 19: R1-R5
         row.extend([datos.get(i, "") for i in range(1, 6)])
+        # Indice 20: Colapinto R
         row.append(datos.get("colapinto_r", ""))
+        # Indices 21 a 23: Constructores
         row.extend([datos.get(f"c{i}", "") for i in range(1, 4)])
         
+        # Indices 24-25: Campeones (Solo Australia)
         if camp_data:
             row.append(camp_data.get("piloto", ""))
             row.append(camp_data.get("equipo", ""))
         else:
             row.extend(["", ""])
 
+    # --- GUARDADO ---
     try:
         sheet.append_row(row)
         return True, f"¡Excelente! Tu predicción de {etapa} ha sido guardada."
@@ -127,9 +143,12 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
 
 def recuperar_predicciones_piloto(usuario, gp):
     """
-    Recupera predicciones de la DB de forma segura.
+    NUEVA FUNCIÓN V4.0 (CORREGIDA):
+    Lee la base de datos y busca qué votó el piloto.
     """
     sheet = conectar_google_sheets("sheet1")
+    
+    # SI FALLA LA CONEXION, DEVOLVER VACÍOS SEGUROS
     if not sheet: 
         return None, None, (None, None)
     
@@ -147,52 +166,64 @@ def recuperar_predicciones_piloto(usuario, gp):
     found_s = False
     found_r = False
     
+    # Recorremos la DB buscando filas que coincidan con Usuario + GP
     for row in registros[1:]:
         if len(row) > 3 and row[1] == usuario and row[2] == gp:
             etapa = row[3]
             
             if etapa == "QUALY":
+                # Qualy está en indices 4 a 8 (Columnas E,F,G,H,I)
+                # Colapinto Q en indice 9 (Columna J)
                 for i in range(1, 6): 
                     if len(row) > 3+i: data_q[i] = row[3+i] 
                 if len(row) > 9: data_q["col"] = row[9]
                 found_q = True
                 
             elif etapa == "SPRINT":
+                # Sprint está en indices 10 a 14 (Columnas K,L,M,N,O)
                 for i in range(1, 6): 
                     if len(row) > 9+i: data_s[i] = row[9+i]
                 found_s = True
                 
             elif etapa == "CARRERA":
+                # Carrera está en indices 15 a 19 (Columnas P,Q,R,S,T)
                 for i in range(1, 6): 
                     if len(row) > 14+i: data_r[i] = row[14+i]
                 if len(row) > 20: data_r["col"] = row[20]
+                
+                # Constructores en indices 21 a 23 (Columnas V,W,X)
                 if len(row) > 21: data_c[1] = row[21]
                 if len(row) > 22: data_c[2] = row[22]
                 if len(row) > 23: data_c[3] = row[23]
                 found_r = True
+    
+    # RETORNOS SEGUROS
+    res_q = data_q if found_q else None
+    res_s = data_s if found_s else None
+    res_r = (data_r, data_c) if found_r else (None, None)
                 
-    return (data_q if found_q else None, 
-            data_s if found_s else None, 
-            (data_r, data_c) if found_r else (None, None))
+    return res_q, res_s, res_r
 
 def actualizar_tabla_general(piloto, puntos_nuevos, gano_qualy, gano_sprint, gano_carrera):
     """
-    Actualiza la tabla de posiciones acumulada.
+    Suma los puntos calculados a la Tabla General ('Posiciones').
     """
     sheet = conectar_google_sheets("Posiciones")
     if sheet is None: return False, "Error al conectar con hoja Posiciones."
     
     try:
         registros = sheet.get_all_records()
+        # Verificar si la hoja está vacía o mal formateada
         if not registros and len(sheet.get_all_values()) < 2:
-             return False, "La hoja Posiciones parece vacía."
+             return False, "La hoja Posiciones parece vacía o sin títulos."
 
         cell = sheet.find(piloto)
         if not cell:
-            return False, f"No se encontró al piloto {piloto}."
+            return False, f"No se encontró al piloto {piloto} en la hoja Posiciones."
             
         fila = cell.row
         
+        # Leer valores actuales (Celdas B, C, D, E)
         try: pts_actuales = int(sheet.cell(fila, 2).value or 0)
         except: pts_actuales = 0
         
@@ -205,17 +236,19 @@ def actualizar_tabla_general(piloto, puntos_nuevos, gano_qualy, gano_sprint, gan
         try: carrera_actual = int(sheet.cell(fila, 5).value or 0)
         except: carrera_actual = 0
         
+        # Sumar lo nuevo
         nuevo_pts = pts_actuales + puntos_nuevos
         nueva_qualy = qualy_actual + (1 if gano_qualy else 0)
         nueva_sprint = sprint_actual + (1 if gano_sprint else 0)
         nueva_carrera = carrera_actual + (1 if gano_carrera else 0)
         
+        # Guardar
         sheet.update_cell(fila, 2, nuevo_pts)
         sheet.update_cell(fila, 3, nueva_qualy)
         sheet.update_cell(fila, 4, nueva_sprint)
         sheet.update_cell(fila, 5, nueva_carrera)
         
-        return True, f"✅ {piloto} ACTUALIZADO: +{puntos_nuevos} Pts (Total: {nuevo_pts})"
+        return True, f"✅ {piloto} ACTUALIZADO: +{puntos_nuevos} Pts (Total acumulado: {nuevo_pts})"
         
     except Exception as e:
         return False, f"Error actualizando tabla: {e}"
@@ -252,16 +285,16 @@ HORARIOS_CARRERA = {
 }
 
 def verificar_estado_gp(gp_seleccionado):
+    """
+    Verifica si estamos dentro del tiempo permitido (Desde 72hs antes hasta 1 hora antes).
+    """
     if gp_seleccionado not in HORARIOS_CARRERA:
         return "ABIERTO (SIN FECHA)", True 
-    
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
     fecha_carrera = tz.localize(datetime.strptime(HORARIOS_CARRERA[gp_seleccionado], "%Y-%m-%d %H:%M"))
     ahora = datetime.now(tz)
-    
     limite_apertura = fecha_carrera - timedelta(hours=72)
     limite_cierre = fecha_carrera - timedelta(hours=1)
-    
     if ahora < limite_apertura:
         return "PRÓXIMAMENTE (Abre 72hs antes del evento)", False
     elif ahora > limite_cierre:
@@ -270,6 +303,9 @@ def verificar_estado_gp(gp_seleccionado):
         return f"ABIERTO (Cierra: {limite_cierre.strftime('%d/%m %H:%M')})", True
 
 def calcular_puntos(tipo, prediccion, oficial, colapinto_pred=None, colapinto_real=None):
+    """
+    Motor matemático para calcular los puntos en la calculadora.
+    """
     puntos = 0
     aciertos = 0
     
@@ -289,6 +325,7 @@ def calcular_puntos(tipo, prediccion, oficial, colapinto_pred=None, colapinto_re
     max_pos = 3 if tipo == "CONSTRUCTORES" else 5
     
     for i in range(1, max_pos + 1):
+        # Conversión a string y strip para evitar errores si viene un None
         p_user = str(prediccion.get(i, "")).strip().lower()
         p_real = str(oficial.get(i, "")).strip().lower()
         
@@ -307,7 +344,7 @@ def calcular_puntos(tipo, prediccion, oficial, colapinto_pred=None, colapinto_re
     return puntos
 
 # ==============================================================================
-# 4. CONFIGURACIÓN VISUAL Y ESTÉTICA
+# 4. CONFIGURACIÓN VISUAL Y ESTÉTICA (CSS COMPLETO)
 # ==============================================================================
 
 st.set_page_config(
@@ -471,30 +508,150 @@ GRILLA_2026 = {
 }
 
 CALENDARIO_VISUAL = [
-    {"Fecha": "06-08 Mar", "Gran Premio": "GP Australia", "Circuito": "Melbourne", "Formato": "Clásico"},
-    {"Fecha": "13-15 Mar", "Gran Premio": "GP China", "Circuito": "Shanghai", "Formato": "⚡ SPRINT"},
-    {"Fecha": "27-29 Mar", "Gran Premio": "GP Japón", "Circuito": "Suzuka", "Formato": "Clásico"},
-    {"Fecha": "10-12 Abr", "Gran Premio": "GP Bahréin", "Circuito": "Sakhir", "Formato": "Clásico"},
-    {"Fecha": "17-19 Abr", "Gran Premio": "GP Arabia Saudita", "Circuito": "Jeddah", "Formato": "Clásico"},
-    {"Fecha": "01-03 May", "Gran Premio": "GP Miami", "Circuito": "Miami", "Formato": "⚡ SPRINT"},
-    {"Fecha": "22-24 May", "Gran Premio": "GP Canadá", "Circuito": "Montreal", "Formato": "⚡ SPRINT"},
-    {"Fecha": "05-07 Jun", "Gran Premio": "GP Mónaco", "Circuito": "Montecarlo", "Formato": "Clásico"},
-    {"Fecha": "12-14 Jun", "Gran Premio": "GP España", "Circuito": "Barcelona", "Formato": "Clásico"},
-    {"Fecha": "26-28 Jun", "Gran Premio": "GP Austria", "Circuito": "Spielberg", "Formato": "Clásico"},
-    {"Fecha": "03-05 Jul", "Gran Premio": "GP Reino Unido", "Circuito": "Silverstone", "Formato": "⚡ SPRINT"},
-    {"Fecha": "17-19 Jul", "Gran Premio": "GP Bélgica", "Circuito": "Spa", "Formato": "Clásico"},
-    {"Fecha": "24-26 Jul", "Gran Premio": "GP Hungría", "Circuito": "Budapest", "Formato": "Clásico"},
-    {"Fecha": "21-23 Ago", "Gran Premio": "GP Países Bajos", "Circuito": "Zandvoort", "Formato": "⚡ SPRINT"},
-    {"Fecha": "04-06 Sep", "Gran Premio": "GP Italia", "Circuito": "Monza", "Formato": "Clásico"},
-    {"Fecha": "11-13 Sep", "Gran Premio": "GP Madrid", "Circuito": "Madrid", "Formato": "Clásico"},
-    {"Fecha": "25-27 Sep", "Gran Premio": "GP Azerbaiyán", "Circuito": "Bakú", "Formato": "Clásico"},
-    {"Fecha": "09-11 Oct", "Gran Premio": "GP Singapur", "Circuito": "Marina Bay", "Formato": "⚡ SPRINT"},
-    {"Fecha": "23-25 Oct", "Gran Premio": "GP Estados Unidos", "Circuito": "Austin", "Formato": "Clásico"},
-    {"Fecha": "30-01 Nov", "Gran Premio": "GP México", "Circuito": "Hermanos Rodríguez", "Formato": "Clásico"},
-    {"Fecha": "06-08 Nov", "Gran Premio": "GP Brasil", "Circuito": "Interlagos", "Formato": "Clásico"},
-    {"Fecha": "19-21 Nov", "Gran Premio": "GP Las Vegas", "Circuito": "Las Vegas", "Formato": "Clásico"},
-    {"Fecha": "27-29 Nov", "Gran Premio": "GP Qatar", "Circuito": "Lusail", "Formato": "Clásico"},
-    {"Fecha": "04-06 Dic", "Gran Premio": "GP Abu Dabi", "Circuito": "Yas Marina", "Formato": "Clásico"},
+    {
+        "Fecha": "06-08 Mar", 
+        "Gran Premio": "GP Australia", 
+        "Circuito": "Melbourne", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "13-15 Mar", 
+        "Gran Premio": "GP China", 
+        "Circuito": "Shanghai", 
+        "Formato": "⚡ SPRINT"
+    },
+    {
+        "Fecha": "27-29 Mar", 
+        "Gran Premio": "GP Japón", 
+        "Circuito": "Suzuka", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "10-12 Abr", 
+        "Gran Premio": "GP Bahréin", 
+        "Circuito": "Sakhir", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "17-19 Abr", 
+        "Gran Premio": "GP Arabia Saudita", 
+        "Circuito": "Jeddah", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "01-03 May", 
+        "Gran Premio": "GP Miami", 
+        "Circuito": "Miami", 
+        "Formato": "⚡ SPRINT"
+    },
+    {
+        "Fecha": "22-24 May", 
+        "Gran Premio": "GP Canadá", 
+        "Circuito": "Montreal", 
+        "Formato": "⚡ SPRINT"
+    },
+    {
+        "Fecha": "05-07 Jun", 
+        "Gran Premio": "GP Mónaco", 
+        "Circuito": "Montecarlo", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "12-14 Jun", 
+        "Gran Premio": "GP España", 
+        "Circuito": "Barcelona", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "26-28 Jun", 
+        "Gran Premio": "GP Austria", 
+        "Circuito": "Spielberg", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "03-05 Jul", 
+        "Gran Premio": "GP Reino Unido", 
+        "Circuito": "Silverstone", 
+        "Formato": "⚡ SPRINT"
+    },
+    {
+        "Fecha": "17-19 Jul", 
+        "Gran Premio": "GP Bélgica", 
+        "Circuito": "Spa", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "24-26 Jul", 
+        "Gran Premio": "GP Hungría", 
+        "Circuito": "Budapest", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "21-23 Ago", 
+        "Gran Premio": "GP Países Bajos", 
+        "Circuito": "Zandvoort", 
+        "Formato": "⚡ SPRINT"
+    },
+    {
+        "Fecha": "04-06 Sep", 
+        "Gran Premio": "GP Italia", 
+        "Circuito": "Monza", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "11-13 Sep", 
+        "Gran Premio": "GP Madrid", 
+        "Circuito": "Madrid", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "25-27 Sep", 
+        "Gran Premio": "GP Azerbaiyán", 
+        "Circuito": "Bakú", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "09-11 Oct", 
+        "Gran Premio": "GP Singapur", 
+        "Circuito": "Marina Bay", 
+        "Formato": "⚡ SPRINT"
+    },
+    {
+        "Fecha": "23-25 Oct", 
+        "Gran Premio": "GP Estados Unidos", 
+        "Circuito": "Austin", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "30-01 Nov", 
+        "Gran Premio": "GP México", 
+        "Circuito": "Hermanos Rodríguez", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "06-08 Nov", 
+        "Gran Premio": "GP Brasil", 
+        "Circuito": "Interlagos", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "19-21 Nov", 
+        "Gran Premio": "GP Las Vegas", 
+        "Circuito": "Las Vegas", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "27-29 Nov", 
+        "Gran Premio": "GP Qatar", 
+        "Circuito": "Lusail", 
+        "Formato": "Clásico"
+    },
+    {
+        "Fecha": "04-06 Dic", 
+        "Gran Premio": "GP Abu Dabi", 
+        "Circuito": "Yas Marina", 
+        "Formato": "Clásico"
+    },
 ]
 
 
@@ -722,13 +879,13 @@ def main():
     elif opcion == "🧮 Calculadora de Puntos":
         st.title("🧮 CENTRO DE CÓMPUTOS")
         
-        st.info("🔒 ÁREA RESTRINGIDA: Para evitar espionaje, se requiere autorización.")
+        st.info("🔒 ÁREA RESTRINGIDA: Para evitar espionaje, se requiere autorización del Comisario.")
         
         # 1. GATEKEEPER (CANDADO)
         pwd = st.text_input("🔑 Ingrese Clave de Comisario:", type="password")
         
-        if pwd == "2022": # CLAVE DE CHECO PEREZ
-            st.success("✅ ACCESO AUTORIZADO - MODO COMISARIO ACTIVO")
+        if pwd == "2022": # CLAVE MAESTRA
+            st.success("✅ ACCESO AUTORIZADO")
             st.divider()
             
             # --- AQUÍ EMPIEZA LA CALCULADORA REAL (SOLO VISIBLE SI CLAVE OK) ---
@@ -829,9 +986,9 @@ def main():
                         ok, msg = actualizar_tabla_general(st.session_state['piloto_calc'], st.session_state['total_calc'], gano_qualy, gano_sprint, gano_carrera)
                     if ok: st.success(msg); st.balloons()
                     else: st.error(msg)
-                    
+        
         elif pwd:
-            st.error("⛔ ACCESO DENEGADO. Solo el Comisario Checo Pérez puede ver las predicciones antes del Domingo.")
+            st.error("⛔ ACCESO DENEGADO.")
             st.stop()
 
     # --- TABLA DE POSICIONES (V3.0 LEÍDA DE DB) ---
