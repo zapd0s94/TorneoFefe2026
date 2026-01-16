@@ -4,35 +4,37 @@ from datetime import datetime, timedelta
 import pytz
 import gspread
 from google.oauth2.service_account import Credentials
-import streamlit.components.v1 as components  # NECESARIO PARA EL SCROLL
+import streamlit.components.v1 as components
 
 # ==============================================================================
-# 1. TRUCOS DE MAGIA (JAVASCRIPT) PARA MÓVIL
+# 1. TRUCOS DE MAGIA (SCROLL MÓVIL)
 # ==============================================================================
 
 def scroll_to_top():
     """
     Inyecta un script invisible que fuerza al navegador a subir
     al inicio de la página cada vez que se carga una sección.
-    Ayuda a que el menú no tape el contenido en celulares.
+    Mejorado para detectar el contenedor de móviles.
     """
     js = """
     <script>
-        var body = window.parent.document.querySelector(".main");
-        console.log(body);
-        body.scrollTop = 0;
+        var viewContainer = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
+        if (viewContainer) {
+            viewContainer.scrollTop = 0;
+        }
+        window.parent.scrollTo(0, 0);
     </script>
     """
     components.html(js, height=0)
 
 # ==============================================================================
-# 2. CONFIGURACIÓN Y CONEXIÓN CON GOOGLE SHEETS
+# 2. CONEXIÓN Y BASE DE DATOS
 # ==============================================================================
 
-def conectar_google_sheets():
+def conectar_google_sheets(nombre_hoja="sheet1"):
     """
-    Conecta con la API de Google Sheets usando el archivo credentials.json
-    o los Secrets de Streamlit Cloud.
+    Conecta con la API de Google Sheets.
+    Permite elegir entre la hoja de 'Predicciones' (sheet1) o 'Posiciones'.
     """
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -40,100 +42,177 @@ def conectar_google_sheets():
     ]
     
     try:
-        # INTENTO 1: Buscar en la Caja Fuerte de la Nube (Streamlit Secrets)
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        # INTENTO 2: Buscar archivo local (Tu PC)
         else:
             creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
             
         client = gspread.authorize(creds)
-        # Abre la hoja por su nombre EXACTO
-        sheet = client.open("TorneoFefe2026_DB").sheet1
-        return sheet
+        
+        # Selección de hoja
+        if nombre_hoja == "Posiciones":
+            return client.open("TorneoFefe2026_DB").worksheet("Posiciones")
+        else:
+            return client.open("TorneoFefe2026_DB").sheet1
     except Exception as e:
         return None
 
 def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
     """
-    Guarda los datos en Google Sheets verificando que no existan duplicados.
+    Guarda las predicciones en la hoja principal (sheet1).
     """
-    sheet = conectar_google_sheets()
+    sheet = conectar_google_sheets("sheet1")
     if sheet is None:
-        return False, "Error CRÍTICO: No se pudo conectar con la Base de Datos. Revisa 'credentials.json'."
+        return False, "Error CRÍTICO: No se pudo conectar con la Base de Datos."
 
-    # --- PASO DE SEGURIDAD: VERIFICAR DUPLICADOS ---
+    # --- VERIFICAR DUPLICADOS ---
     try:
         registros = sheet.get_all_values()
-        
-        # Recorremos las filas (saltando la primera que son los títulos)
-        # Columna B (índice 1) es PILOTO, Columna C (índice 2) es GP, Columna D (índice 3) es ETAPA
         for fila in registros[1:]:
-            if len(fila) > 3: # Verificar que la fila tenga datos suficientes
-                piloto_guardado = fila[1]
-                gp_guardado = fila[2]
-                etapa_guardada = fila[3]
-                
-                if piloto_guardado == usuario and gp_guardado == gp and etapa_guardada == etapa:
+            if len(fila) > 3:
+                if fila[1] == usuario and fila[2] == gp and fila[3] == etapa:
                     return False, f"⛔ ERROR DE SEGURIDAD: Ya enviaste la fase de {etapa} para el {gp}. No se permiten reenvíos."
     except Exception as e:
         return False, f"Error técnico validando duplicados: {e}"
 
-    # --- PREPARACIÓN DE LA FECHA ---
+    # --- PREPARACIÓN DE DATOS ---
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
     fecha_hora = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
-    # --- ARMADO DE LA FILA PARA EXCEL ---
-    # Orden: [Fecha, Piloto, GP, Etapa, ...]
+    # Estructura base: [Fecha, Usuario, GP, Etapa]
     row = [fecha_hora, usuario, gp, etapa]
     
-    # LÓGICA SEGÚN LA ETAPA QUE SE ESTÁ ENVIANDO
+    # LÓGICA DE COLUMNAS (Mantiene compatibilidad con tu DB actual)
     if etapa == "QUALY":
-        # Guardamos Q1-Q5 (5 columnas)
+        # Indices 4 a 8: Q1-Q5
         row.extend([datos.get(i, "") for i in range(1, 6)])
-        # Guardamos Colapinto Qualy (1 columna)
+        # Indice 9: Colapinto Q
         row.append(datos.get("colapinto_q", ""))
-        
-        # Rellenamos con VACÍO todo el resto (Sprint, Carrera, Constructores, Campeones)
+        # Relleno hasta el final
         row.extend([""] * 16)
 
     elif etapa == "SPRINT":
-        # Dejamos espacio de Qualy (6 columnas) vacíos
+        # Indices 4 a 9 vacíos (lugar de Qualy)
         row.extend([""] * 6)
-        
-        # Guardamos Sprint (5 columnas)
+        # Indices 10 a 14: S1-S5
         row.extend([datos.get(i, "") for i in range(1, 6)])
-        
-        # Rellenamos el resto vacíos (11 columnas)
+        # Relleno hasta el final
         row.extend([""] * 11)
 
     elif etapa == "CARRERA":
-        # Dejamos espacio Qualy(6) + Sprint(5) = 11 vacíos
+        # Indices 4 a 14 vacíos (lugar de Qualy + Sprint)
         row.extend([""] * 11)
-        
-        # Guardamos Carrera (5 columnas)
+        # Indices 15 a 19: R1-R5
         row.extend([datos.get(i, "") for i in range(1, 6)])
-        # Guardamos Colapinto Carrera (1 columna)
+        # Indice 20: Colapinto R
         row.append(datos.get("colapinto_r", ""))
-        
-        # Guardamos Constructores (3 columnas)
+        # Indices 21 a 23: Constructores
         row.extend([datos.get(f"c{i}", "") for i in range(1, 4)])
         
-        # Guardamos Campeones (Solo si es Australia)
+        # Indices 24-25: Campeones (Solo Australia)
         if camp_data:
             row.append(camp_data.get("piloto", ""))
             row.append(camp_data.get("equipo", ""))
         else:
             row.extend(["", ""])
 
-    # --- ESCRITURA FINAL EN LA NUBE ---
+    # --- GUARDADO ---
     try:
         sheet.append_row(row)
-        return True, f"¡Excelente! Tu predicción de {etapa} ha sido guardada en la base de datos oficial."
+        return True, f"¡Excelente! Tu predicción de {etapa} ha sido guardada."
     except Exception as e:
         return False, f"Error al escribir en Google Sheets: {e}"
 
+def recuperar_predicciones_piloto(usuario, gp):
+    """
+    NUEVA FUNCIÓN V3.0:
+    Lee la base de datos y busca qué votó el piloto para rellenar la calculadora automáticamente.
+    """
+    sheet = conectar_google_sheets("sheet1")
+    if not sheet: return None, None, None
+    
+    registros = sheet.get_all_values()
+    
+    data_q = {}
+    data_s = {}
+    data_r = {}
+    data_c = {}
+    
+    found_q = False
+    found_s = False
+    found_r = False
+    
+    # Recorremos la DB buscando filas que coincidan con Usuario + GP
+    for row in registros[1:]:
+        if len(row) > 3 and row[1] == usuario and row[2] == gp:
+            etapa = row[3]
+            
+            if etapa == "QUALY":
+                # Qualy está en indices 4 a 8 (Columnas E,F,G,H,I)
+                # Colapinto Q en indice 9 (Columna J)
+                for i in range(1, 6): 
+                    data_q[i] = row[3+i] 
+                data_q["col"] = row[9]
+                found_q = True
+                
+            elif etapa == "SPRINT":
+                # Sprint está en indices 10 a 14 (Columnas K,L,M,N,O)
+                for i in range(1, 6): 
+                    data_s[i] = row[9+i]
+                found_s = True
+                
+            elif etapa == "CARRERA":
+                # Carrera está en indices 15 a 19 (Columnas P,Q,R,S,T)
+                # Colapinto R en indice 20 (Columna U)
+                # Constructores en indices 21 a 23 (Columnas V,W,X)
+                for i in range(1, 6): 
+                    data_r[i] = row[14+i]
+                data_r["col"] = row[20]
+                data_c[1] = row[21]
+                data_c[2] = row[22]
+                data_c[3] = row[23]
+                found_r = True
+                
+    return (data_q if found_q else None, 
+            data_s if found_s else None, 
+            (data_r, data_c) if found_r else (None, None))
+
+def actualizar_tabla_general(piloto, puntos_nuevos, gano_qualy, gano_sprint, gano_carrera):
+    """
+    NUEVA FUNCIÓN V3.0:
+    Suma los puntos calculados a la Tabla General ('Posiciones').
+    """
+    sheet = conectar_google_sheets("Posiciones")
+    if sheet is None: return False, "Error al conectar con hoja Posiciones."
+    
+    try:
+        registros = sheet.get_all_records()
+        cell = sheet.find(piloto)
+        fila = cell.row
+        
+        # Leer valores actuales (Celdas B, C, D, E)
+        pts_actuales = int(sheet.cell(fila, 2).value or 0)
+        qualy_actual = int(sheet.cell(fila, 3).value or 0)
+        sprint_actual = int(sheet.cell(fila, 4).value or 0)
+        carrera_actual = int(sheet.cell(fila, 5).value or 0)
+        
+        # Sumar lo nuevo
+        nuevo_pts = pts_actuales + puntos_nuevos
+        nueva_qualy = qualy_actual + (1 if gano_qualy else 0)
+        nueva_sprint = sprint_actual + (1 if gano_sprint else 0)
+        nueva_carrera = carrera_actual + (1 if gano_carrera else 0)
+        
+        # Guardar
+        sheet.update_cell(fila, 2, nuevo_pts)
+        sheet.update_cell(fila, 3, nueva_qualy)
+        sheet.update_cell(fila, 4, nueva_sprint)
+        sheet.update_cell(fila, 5, nueva_carrera)
+        
+        return True, f"✅ {piloto} ACTUALIZADO: +{puntos_nuevos} Pts (Total acumulado: {nuevo_pts})"
+        
+    except Exception as e:
+        return False, f"Error actualizando tabla: {e}"
 
 # ==============================================================================
 # 3. LÓGICA DE TIEMPOS Y PUNTOS
@@ -167,23 +246,13 @@ HORARIOS_CARRERA = {
 }
 
 def verificar_estado_gp(gp_seleccionado):
-    """
-    Verifica si estamos dentro del tiempo permitido (Desde 72hs antes hasta 1 hora antes).
-    """
     if gp_seleccionado not in HORARIOS_CARRERA:
         return "ABIERTO (SIN FECHA)", True 
-
-    fecha_carrera_str = HORARIOS_CARRERA[gp_seleccionado]
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
-    
-    fecha_carrera = datetime.strptime(fecha_carrera_str, "%Y-%m-%d %H:%M")
-    fecha_carrera = tz.localize(fecha_carrera)
-    
+    fecha_carrera = tz.localize(datetime.strptime(HORARIOS_CARRERA[gp_seleccionado], "%Y-%m-%d %H:%M"))
     ahora = datetime.now(tz)
-    
-    limite_apertura = fecha_carrera - timedelta(hours=72) # Abre 3 días antes
-    limite_cierre = fecha_carrera - timedelta(hours=1)    # Cierra 1 hora antes
-    
+    limite_apertura = fecha_carrera - timedelta(hours=72)
+    limite_cierre = fecha_carrera - timedelta(hours=1)
     if ahora < limite_apertura:
         return "PRÓXIMAMENTE (Abre 72hs antes del evento)", False
     elif ahora > limite_cierre:
@@ -192,50 +261,30 @@ def verificar_estado_gp(gp_seleccionado):
         return f"ABIERTO (Cierra: {limite_cierre.strftime('%d/%m %H:%M')})", True
 
 def calcular_puntos(tipo, prediccion, oficial, colapinto_pred=None, colapinto_real=None):
-    """
-    Motor matemático para calcular los puntos en la calculadora.
-    """
     puntos = 0
     aciertos = 0
-    
     if tipo == "SPRINT":
-        escala = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4}
-        bonus_perfecto = 3
+        escala = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4}; bonus_perfecto = 3
     elif tipo == "CARRERA":
-        escala = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10}
-        bonus_perfecto = 5
+        escala = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10}; bonus_perfecto = 5
     elif tipo == "QUALY":
-        escala = {1: 15, 2: 10, 3: 7, 4: 5, 5: 3}
-        bonus_perfecto = 5 
+        escala = {1: 15, 2: 10, 3: 7, 4: 5, 5: 3}; bonus_perfecto = 5 
     elif tipo == "CONSTRUCTORES":
-        escala = {1: 10, 2: 5, 3: 2}
-        bonus_perfecto = 3
-    
+        escala = {1: 10, 2: 5, 3: 2}; bonus_perfecto = 3
     max_pos = 3 if tipo == "CONSTRUCTORES" else 5
-    
     for i in range(1, max_pos + 1):
-        p_user = str(prediccion.get(i, "")).strip().lower()
-        p_real = str(oficial.get(i, "")).strip().lower()
-        
-        if p_user and p_user == p_real:
-            puntos += escala.get(i, 0)
-            aciertos += 1
-            
-    if aciertos == max_pos:
-        puntos += bonus_perfecto
-        
-    if colapinto_pred and colapinto_real:
-        if int(colapinto_pred) == int(colapinto_real):
-            if tipo == "QUALY":
-                puntos += 10
-            elif tipo == "CARRERA":
-                puntos += 20
-                
+        if str(prediccion.get(i, "")).strip().lower() == str(oficial.get(i, "")).strip().lower():
+            puntos += escala.get(i, 0); aciertos += 1
+    if aciertos == max_pos: puntos += bonus_perfecto
+    if colapinto_pred and colapinto_real and str(colapinto_pred) and str(colapinto_real):
+        try:
+            if int(colapinto_pred) == int(colapinto_real):
+                puntos += (10 if tipo == "QUALY" else 20)
+        except: pass
     return puntos
 
-
 # ==============================================================================
-# 4. CONFIGURACIÓN VISUAL Y ESTÉTICA (CSS COMPLETO)
+# 4. CONFIGURACIÓN VISUAL Y ESTÉTICA
 # ==============================================================================
 
 st.set_page_config(
@@ -250,13 +299,13 @@ st.markdown("""
     .stApp { background-color: #0e1117; }
     header[data-testid="stHeader"] { background-color: #0e1117; }
     
-    /* 2. TEXTOS (Siempre visibles, color gris claro para contraste) */
+    /* 2. TEXTOS */
     .stMarkdown, .stText, p, li, label, h1, h2, h3, h4, h5, h6, span, div { 
         color: #E0E0E0 !important; 
         font-family: 'Segoe UI', sans-serif; 
     }
     
-    /* 3. TÍTULOS CON NEÓN DORADO/VIOLETA */
+    /* 3. TÍTULOS */
     h1, h2, h3 { 
         text-shadow: 0 0 10px #BF00FF; 
         color: #FFD700 !important; 
@@ -270,14 +319,14 @@ st.markdown("""
         border-right: 2px solid #FFD700; 
     }
 
-    /* 5. INPUTS DE TEXTO Y NÚMEROS (FONDO AZUL OSCURO, SIN BLANCOS) */
+    /* 5. INPUTS */
     .stTextInput input, .stNumberInput input {
         background-color: #001f3f !important; 
         color: #FFD700 !important; 
         border: 1px solid #FFD700 !important;
     }
 
-    /* 6. MENÚS DESPLEGABLES (SELECTBOX) */
+    /* 6. SELECTBOX */
     div[data-baseweb="select"] > div {
         background-color: #001f3f !important; 
         border: 1px solid #FFD700 !important;
@@ -315,15 +364,7 @@ st.markdown("""
         border: 1px solid #333 !important; 
     }
 
-    /* 9. EXPANDERS (ESCUDERIAS) */
-    .streamlit-expanderHeader {
-        background-color: #001f3f !important;
-        border: 1px solid #333;
-        color: #FFD700 !important;
-    }
-    .streamlit-expanderHeader p { color: #FFD700 !important; }
-    
-    /* 10. BOTONES */
+    /* 9. BOTONES */
     div.stButton > button { 
         background-color: #001f3f; 
         color: #FFD700; 
@@ -337,7 +378,7 @@ st.markdown("""
         color: #000000; 
     }
 
-    /* 11. ESTILO PARA EL LINK DE REINICIO (NUEVO) */
+    /* 10. ESTILO PARA EL LINK DE REINICIO */
     .reset-link { 
         display: block; 
         text-align: center; 
@@ -378,24 +419,24 @@ GPS_OFICIALES = list(HORARIOS_CARRERA.keys())
 GPS_SPRINT = [
     "02. Gran Premio de China", 
     "06. Gran Premio de Miami", 
-    "07. Gran Premio de Canadá",
+    "07. Gran Premio de Canadá", 
     "11. Gran Premio de Gran Bretaña", 
     "14. Gran Premio de los Países Bajos", 
     "18. Gran Premio de Singapur"
 ]
 
 GRILLA_2026 = {
+    "CADILLAC F1": ["Checo Pérez", "Valtteri Bottas"],
+    "AUDI F1 TEAM": ["Nico Hulkenberg", "Gabriel Bortoleto"],
+    "ALPINE RENAULT": ["Pierre Gasly", "Franco Colapinto"],
+    "RACING BULLS (RB)": ["Liam Lawson", "Arvid Lindblad"],
+    "ASTON MARTIN ARAMCO": ["Lance Stroll", "Fernando Alonso"],
+    "FERRARI HP": ["Charles Leclerc", "Lewis Hamilton"],
+    "HAAS TOYOTA": ["Oliver Bearman", "Esteban Ocon"],
     "MCLAREN": ["Lando Norris", "Oscar Piastri"],
-"RED BULL": ["Max Verstappen", "Isack Hadjar"],
-"MERCEDES": ["Kimi Antonelli", "George Russell"],
-"FERRARI": ["Charles Leclerc", "Lewis Hamilton"],
-"WILLIAMS": ["Alex Albon", "Carlos Sainz"],
-"ASTON MARTIN": ["Lance Stroll", "Fernando Alonso"],
-"RACING BULLS": ["Liam Lawson", "Arvid Lindblad"],
-"HAAS": ["Oliver Bearman", "Esteban Ocon"],
-"AUDI": ["Nico Hulkenberg", "Gabriel Bortoleto"],
-"ALPINE": ["Pierre Gasly", "Franco Colapinto"],
-"CADILLAC": ["Checo Pérez", "Valtteri Bottas"],
+    "MERCEDES AMG": ["Kimi Antonelli", "George Russell"],
+    "RED BULL FORD": ["Max Verstappen", "Isack Hadjar"],
+    "WILLIAMS": ["Alex Albon", "Carlos Sainz"]
 }
 
 CALENDARIO_VISUAL = [
@@ -433,7 +474,7 @@ CALENDARIO_VISUAL = [
 def main():
     st.sidebar.title("🏁 MENU PRINCIPAL")
     
-    # --- BOTÓN DE REINICIO/HOME (SOLUCIÓN MÓVIL) ---
+    # BOTÓN DE REINICIO
     st.sidebar.markdown('<a href="/" target="_self" class="reset-link">🔄 REINICIAR / HOME</a>', unsafe_allow_html=True)
     
     st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/3/33/F1.svg", width=50)
@@ -451,8 +492,7 @@ def main():
         "🏆 Muro de Campeones"
     ])
 
-    # --- ACTIVAR SCROLL AUTOMÁTICO (SOLUCIÓN MÓVIL) ---
-    # Esto fuerza al navegador a subir cada vez que Streamlit recarga
+    # ACTIVAR SCROLL AUTOMÁTICO
     scroll_to_top()
 
     # --- INICIO ---
@@ -462,7 +502,7 @@ def main():
         st.divider()
         st.markdown("<h2 style='text-align: center; color: #FFD700;'>📜 EL LEGADO DE FEFE WOLF</h2>", unsafe_allow_html=True)
         
-        # TEXTO COMPLETO RESTAURADO (VERSIÓN LARGA)
+        # TEXTO COMPLETO
         st.markdown("""
         <div style='background-color: #111; padding: 20px; border-left: 5px solid #FFD700; border-radius: 10px;'>
         
@@ -491,7 +531,6 @@ def main():
         st.divider()
         
         st.markdown("<h3 style='text-align: center; color: #FFD700;'>👑 EN MEMORIA DEL REY FEFE WOLF 👑</h3>", unsafe_allow_html=True)
-        # IMAGEN CON COLUMNAS PARA ACHICAR
         c_img1, c_img2, c_img3 = st.columns([1, 2, 1])
         with c_img2:
             try: st.image("IMAGENFEFE.jfif") 
@@ -500,7 +539,6 @@ def main():
         st.divider()
         
         st.markdown("<h3 style='text-align: center; color: #FFD700;'>🏛️ LA CÚPULA OFICIAL DEL TORNEO 2026</h3>", unsafe_allow_html=True)
-        # IMAGEN CON COLUMNAS PARA ACHICAR
         c_img1b, c_img2b, c_img3b = st.columns([1, 2, 1])
         with c_img2b:
             try: st.image("IMAGENCUPULA.jfif")
@@ -513,11 +551,10 @@ def main():
             for p in PILOTOS_TORNEO:
                 st.warning(f"🏎️ {p}")
 
-    # --- CALENDARIO (CON IMAGEN ACHICADA) ---
+    # --- CALENDARIO ---
     elif opcion == "📅 Calendario Oficial 2026":
         st.title("📅 CALENDARIO TEMPORADA 2026")
         
-        # IMAGEN CON COLUMNAS PARA ACHICAR
         c_cal1, c_cal2, c_cal3 = st.columns([1, 2, 1])
         with c_cal2:
             try:
@@ -549,7 +586,6 @@ def main():
         usuario = c1.selectbox("Piloto Participante", PILOTOS_TORNEO)
         gp_actual = c2.selectbox("Seleccionar Gran Premio", GPS_OFICIALES)
         
-        # VERIFICACIÓN DE TIEMPO
         mensaje_estado, habilitado = verificar_estado_gp(gp_actual)
         
         if not habilitado:
@@ -563,7 +599,6 @@ def main():
         if ES_SPRINT:
             st.info("⚡ **¡ATENCIÓN! ESTE ES UN FIN DE SEMANA SPRINT** ⚡")
             
-        # Variables Campeon (Australia)
         camp_piloto, camp_equipo = "", ""
         if "Australia" in gp_actual:
             st.markdown("---")
@@ -586,7 +621,6 @@ def main():
             tab_qualy, tab_race = tabs[0], tabs[1]
             tab_sprint = None
 
-        # --- PESTAÑA QUALY ---
         with tab_qualy:
             st.subheader(f"Qualy - {gp_actual}")
             st.info("1°(15) - 2°(10) - 3°(7) - 4°(5) - 5°(3) | Pleno: +5 Pts")
@@ -608,7 +642,6 @@ def main():
                     else: st.error(msg)
                 else: st.error("⛔ PIN INCORRECTO")
 
-        # --- PESTAÑA SPRINT ---
         if tab_sprint:
             with tab_sprint:
                 st.subheader(f"Sprint - {gp_actual}")
@@ -625,7 +658,6 @@ def main():
                         else: st.error(msg)
                     else: st.error("⛔ PIN INCORRECTO")
 
-        # --- PESTAÑA CARRERA ---
         with tab_race:
             cr, cc = st.columns(2)
             r_data = {}
@@ -645,7 +677,6 @@ def main():
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🚀 ENVIAR CARRERA Y CONSTRUCTORES", width='stretch', key="btn_r"):
                 if pin == CREDENCIALES.get(usuario):
-                    # Validar campeones si es Australia
                     if "Australia" in gp_actual and (not camp_piloto or not camp_equipo):
                         st.error("⚠️ En Australia debes llenar los Campeones antes de enviar la Carrera.")
                     else:
@@ -656,14 +687,16 @@ def main():
                         else: st.error(msg)
                 else: st.error("⛔ PIN INCORRECTO")
 
-    # --- CALCULADORA ---
+    # --- CALCULADORA (CENTRO DE CÓMPUTOS V3.0) ---
     elif opcion == "🧮 Calculadora de Puntos":
-        st.title("🧮 CALCULADORA OFICIAL DEL COMISARIO")
-        st.markdown("Utiliza esta herramienta el domingo para calcular los puntos exactos.")
+        st.title("🧮 CENTRO DE CÓMPUTOS")
+        st.info("⚠️ ESTA SECCIÓN ES SOLO PARA AXEL (COMISARIO) LOS DOMINGOS")
+        
+        # 1. SELECCIÓN DE GP Y RESULTADOS OFICIALES
+        gp_calc = st.selectbox("Gran Premio a Calcular:", GPS_OFICIALES)
         
         st.subheader("1. RESULTADOS OFICIALES (FIA)")
-        oficial = {}
-        col_res1, col_res2, col_res3 = st.columns(3)
+        oficial = {}; col_res1, col_res2, col_res3 = st.columns(3)
         with col_res1:
             st.markdown("**🏁 Carrera**")
             for i in range(1, 6): oficial[f"r{i}"] = st.text_input(f"Oficial Carrera {i}°", key=f"of_r{i}")
@@ -675,68 +708,119 @@ def main():
         with col_res3:
             st.markdown("**🛠️ Constructores**")
             for i in range(1, 4): oficial[f"c{i}"] = st.text_input(f"Oficial Const {i}°", key=f"of_c{i}")
-
-        st.divider()
-        st.subheader("2. EVALUAR PILOTO")
         
-        aplicar_sancion = st.checkbox("❌ PILOTO NO ENVIÓ A TIEMPO (Sanción -5 Pts)", value=False)
-        st.caption("Si marcas esto, se descontarán 5 puntos del total automáticamente.")
+        st.divider()
+        
+        # 2. SELECCIÓN DE PILOTO Y RECUPERACIÓN AUTOMÁTICA
+        st.subheader("2. CALCULAR PUNTOS DE PILOTO")
+        c_user, c_pin = st.columns(2)
+        piloto_calc = c_user.selectbox("Seleccionar Piloto:", PILOTOS_TORNEO)
+        
+        # BUSCAR DATOS AUTOMÁTICAMENTE
+        db_qualy, db_sprint, (db_race, db_const) = recuperar_predicciones_piloto(piloto_calc, gp_calc)
+        
+        if db_qualy or db_race:
+            st.success(f"✅ Se encontraron predicciones guardadas de {piloto_calc}")
+        else:
+            st.warning(f"⚠️ {piloto_calc} NO ha enviado predicciones para {gp_calc} (o hubo error leyendo DB).")
 
-        pred = {}
+        # MOSTRAR PREDICCIONES
+        st.markdown(f"**Predicciones recuperadas de la Base de Datos para {piloto_calc}:**")
         c_pred1, c_pred2, c_pred3 = st.columns(3)
+        
+        # Usamos valores por defecto si no hay datos
+        val_r = db_race if db_race else {}
+        val_q = db_qualy if db_qualy else {}
+        val_c = db_const if db_const else {}
+        val_s = db_sprint if db_sprint else {}
+        
         with c_pred1:
-            st.markdown("Predicción Carrera")
-            pred_r = {i: st.text_input(f"Pred {i}° Carrera", key=f"pr_r{i}") for i in range(1, 6)}
-            col_r_pred = st.number_input("Pred Colapinto Carrera", 1, 22, 10, key="pr_cr")
+            st.write(f"**Carrera:** {val_r.get(1,'-')}, {val_r.get(2,'-')}, {val_r.get(3,'-')}, {val_r.get(4,'-')}, {val_r.get(5,'-')}")
+            st.write(f"**Colapinto R:** {val_r.get('col','-')}")
         with c_pred2:
-            st.markdown("Predicción Qualy")
-            pred_q = {i: st.text_input(f"Pred {i}° Qualy", key=f"pr_q{i}") for i in range(1, 6)}
-            col_q_pred = st.number_input("Pred Colapinto Qualy", 1, 22, 10, key="pr_cq")
+            st.write(f"**Qualy:** {val_q.get(1,'-')}, {val_q.get(2,'-')}, {val_q.get(3,'-')}, {val_q.get(4,'-')}, {val_q.get(5,'-')}")
+            st.write(f"**Colapinto Q:** {val_q.get('col','-')}")
         with c_pred3:
-            st.markdown("Predicción Constructores")
-            pred_c = {i: st.text_input(f"Pred {i}° Const", key=f"pr_c{i}") for i in range(1, 4)}
+            st.write(f"**Const:** {val_c.get(1,'-')}, {val_c.get(2,'-')}, {val_c.get(3,'-')}")
+        
+        if db_sprint:
+            st.info(f"⚡ Sprint: {val_s.get(1,'-')}, {val_s.get(2,'-')}, ...")
+        
+        # 3. OPCIONES EXTRAS
+        st.divider()
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            aplicar_sancion = st.checkbox(f"❌ Sancionar a {piloto_calc} (-5 Pts)", value=False)
+        with col_ex2:
+            st.markdown("**¿Ganó alguna sesión?**")
+            gano_qualy = st.checkbox("🥇 Ganó Qualy", key="gq")
+            gano_sprint = st.checkbox("🥇 Ganó Sprint", key="gs")
+            gano_carrera = st.checkbox("🥇 Ganó Carrera", key="gr")
 
-        if st.button("CALCULAR PUNTOS TOTALES", width='stretch'):
-            oficial_r_dict = {i: oficial[f"r{i}"] for i in range(1, 6)}
-            oficial_q_dict = {i: oficial[f"q{i}"] for i in range(1, 6)}
-            oficial_c_dict = {i: oficial[f"c{i}"] for i in range(1, 4)}
+        # 4. BOTÓN CALCULAR
+        if st.button("CALCULAR TOTAL AUTOMÁTICO", width='stretch'):
+            # Preparar diccionarios oficiales
+            of_r = {i: oficial[f"r{i}"] for i in range(1, 6)}
+            of_q = {i: oficial[f"q{i}"] for i in range(1, 6)}
+            of_c = {i: oficial[f"c{i}"] for i in range(1, 4)}
             
-            pts_carrera = calcular_puntos("CARRERA", pred_r, oficial_r_dict, col_r_pred, oficial["col_r"])
-            pts_qualy = calcular_puntos("QUALY", pred_q, oficial_q_dict, col_q_pred, oficial["col_q"])
-            pts_const = calcular_puntos("CONSTRUCTORES", pred_c, oficial_c_dict)
+            # Calcular usando lo recuperado de la DB
+            pts_carrera = calcular_puntos("CARRERA", val_r, of_r, val_r.get('col'), oficial["col_r"])
+            pts_qualy = calcular_puntos("QUALY", val_q, of_q, val_q.get('col'), oficial["col_q"])
+            pts_const = calcular_puntos("CONSTRUCTORES", val_c, of_c)
+            pts_sprint = 0 # Agregar lógica sprint si fuese necesario
             
-            total = pts_carrera + pts_qualy + pts_const
+            total = pts_carrera + pts_qualy + pts_const + pts_sprint
+            if aplicar_sancion: total -= 5
             
-            msg_sancion = ""
-            if aplicar_sancion:
-                total -= 5
-                msg_sancion = " (Incluye -5 de Sanción)"
+            st.success(f"💰 PUNTOS TOTALES DE {piloto_calc}: **{total}**")
+            st.info(f"Desglose: Carrera ({pts_carrera}) + Qualy ({pts_qualy}) + Const ({pts_const})")
             
-            st.success(f"💰 RESULTADO FINAL: **{total} PUNTOS** {msg_sancion}")
-            st.info(f"Desglose: Carrera ({pts_carrera}) + Qualy ({pts_qualy}) + Constructores ({pts_const})")
+            # Guardar en estado para el botón de confirmar
+            st.session_state['total_calc'] = total
+            st.session_state['piloto_calc'] = piloto_calc
 
-    # --- TABLA DE POSICIONES ---
+        # 5. BOTÓN GUARDAR
+        if 'total_calc' in st.session_state:
+            st.divider()
+            pin_comisario = st.text_input("PIN Comisario para Guardar:", type="password")
+            if st.button(f"💾 GUARDAR {st.session_state['total_calc']} PTS EN TABLA"):
+                if pin_comisario == "2022": # PIN DE CHECO/AXEL
+                    with st.spinner("Actualizando posiciones..."):
+                        ok, msg = actualizar_tabla_general(st.session_state['piloto_calc'], st.session_state['total_calc'], gano_qualy, gano_sprint, gano_carrera)
+                    if ok: st.success(msg); st.balloons()
+                    else: st.error(msg)
+                else: st.error("⛔ PIN INCORRECTO")
+
+    # --- TABLA DE POSICIONES (V3.0 LEÍDA DE DB) ---
     elif opcion == "📊 Tabla de Posiciones":
         st.title("TABLA GENERAL 2026")
         
-        data_posiciones = {
-            "Piloto": PILOTOS_TORNEO,
-            "Puntos": [0, 0, 0, 0, 0], 
-            "Qualys Ganadas": [0, 0, 0, 0, 0],
-            "Sprints Ganadas": [0, 0, 0, 0, 0],
-            "Carreras Ganadas": [0, 0, 0, 0, 0],
-            "Constructores Ganados": [0, 0, 0, 0, 0],
-            "envio_oculto": [5, 4, 3, 2, 1] 
-        }
-        
-        df_pos = pd.DataFrame(data_posiciones)
-        df_pos = df_pos.sort_values(by=["Puntos", "envio_oculto"], ascending=[False, True])
-        
-        st.dataframe(
-            df_pos, hide_index=True, width='stretch',
-            column_order=["Piloto", "Puntos", "Qualys Ganadas", "Sprints Ganadas", "Carreras Ganadas", "Constructores Ganados"],
-            column_config={"Puntos": st.column_config.NumberColumn("🏆 Puntos", format="%d")})
-        st.info("ℹ️ Desempate: Se define por orden de llegada de la predicción.")
+        sheet = conectar_google_sheets("Posiciones")
+        if sheet:
+            try:
+                # Leer todos los registros de la hoja "Posiciones"
+                df_pos = pd.DataFrame(sheet.get_all_records())
+                # Ordenar por Puntos descendente
+                df_pos = df_pos.sort_values(by="Puntos", ascending=False)
+                
+                st.dataframe(
+                    df_pos, 
+                    hide_index=True, 
+                    width='stretch',
+                    column_config={
+                        "Puntos": st.column_config.NumberColumn("🏆 Puntos", format="%d"),
+                        "Qualys": st.column_config.NumberColumn("⏱️ Polemans", format="%d"),
+                        "Sprints": st.column_config.NumberColumn("⚡ Sprints", format="%d"),
+                        "Carreras": st.column_config.NumberColumn("🏁 Victorias", format="%d")
+                    }
+                )
+            except Exception as e:
+                st.error(f"Error leyendo tabla: {e}")
+        else:
+            st.warning("Conectando con la base de datos...")
+            
+        st.info("ℹ️ Esta tabla se actualiza automáticamente los domingos tras la carrera.")
 
     # --- PARRILLA ---
     elif opcion == "🏎️ Pilotos y Escuderías 2026":
@@ -747,7 +831,7 @@ def main():
                 c1.warning(f"🏎️ {pilotos[0]}")
                 c2.warning(f"🏎️ {pilotos[1]}")
 
-    # --- REGLAMENTO (ACTUALIZADO CON -5 PTS) ---
+    # --- REGLAMENTO ---
     elif opcion == "📜 Reglamento Oficial":
         st.title("REGLAMENTO OFICIAL 2026")
         st.markdown("""
@@ -798,18 +882,17 @@ def main():
         * **Desempate:** Gana quien envió primero.
         """)
 
-    # --- MURO DE CAMPEONES (CON IMAGEN ACHICADA) ---
+    # --- MURO DE CAMPEONES ---
     elif opcion == "🏆 Muro de Campeones":
         st.header("🧱 MURO DE CAMPEONES")
         
-        # IMAGEN CON COLUMNAS PARA ACHICAR
         c_muro1, c_muro2, c_muro3 = st.columns([1, 2, 1])
         with c_muro2:
             try: st.image("IMAGENMURO.jfif")
             except: st.error("⚠️ Error: No se encontró 'IMAGENMURO.jfif'")
         
         st.divider()
-        st.subheader("👑 SALON DE LA FAMA")
+        st.subheader("👑 HALL OF FAME")
         
         st.markdown("""
         <div style='background-color: #001f3f; padding: 15px; border-radius: 10px; border: 1px solid #FFD700; margin-bottom: 15px; text-align: center;'>
@@ -827,7 +910,7 @@ def main():
         <div style='background-color: #001f3f; padding: 15px; border-radius: 10px; border: 1px solid #FFD700; margin-bottom: 15px; text-align: center;'>
             <h3 style='color: #FFD700; margin:0; text-shadow: 0 0 5px #BF00FF;'>🥇 FEFE WOLF</h3>
             <p style='color: #FFD700; font-size: 24px; margin: 5px 0;'>⭐</p>
-            <p style='color: #E0E0E0; font-size: 16px; margin:0;'>Campeón 2021</p>
+            <p style='color: #E0E0E0; font-size: 16px; margin:0;'>Campeón Fundador 2021</p>
         </div>
 
         <div style='background-color: #001f3f; padding: 15px; border-radius: 10px; border: 1px solid #FFD700; margin-bottom: 15px; text-align: center;'>
