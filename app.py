@@ -755,113 +755,123 @@ def main():
                         else: st.error(msg)
                 else: st.error("⛔ PIN INCORRECTO")
 
-    # --- CALCULADORA (CENTRO DE CÓMPUTOS V4.0) ---
+    # --- CALCULADORA (CENTRO DE CÓMPUTOS V5.0 - PRIVACIDAD) ---
     elif opcion == "🧮 Calculadora de Puntos":
         st.title("🧮 CENTRO DE CÓMPUTOS")
-        # MENSAJE CORREGIDO
-        st.warning("⚠️ ESTA SECCIÓN ES SOLO PARA EL COMISARIO CHECO PÉREZ")
         
-        # 1. SELECCIÓN DE GP Y RESULTADOS OFICIALES
-        gp_calc = st.selectbox("Gran Premio a Calcular:", GPS_OFICIALES)
+        st.info("🔒 ÁREA RESTRINGIDA: Para evitar espionaje, se requiere autorización.")
         
-        st.subheader("1. RESULTADOS OFICIALES (FIA)")
-        oficial = {}; col_res1, col_res2, col_res3 = st.columns(3)
-        with col_res1:
-            st.markdown("**🏁 Carrera**")
-            for i in range(1, 6): oficial[f"r{i}"] = st.text_input(f"Oficial Carrera {i}°", key=f"of_r{i}")
-            oficial["col_r"] = st.number_input("Oficial Colapinto (Carrera)", 1, 22, 10, key="of_cr")
-        with col_res2:
-            st.markdown("**⏱️ Qualy**")
-            for i in range(1, 6): oficial[f"q{i}"] = st.text_input(f"Oficial Qualy {i}°", key=f"of_q{i}")
-            oficial["col_q"] = st.number_input("Oficial Colapinto (Qualy)", 1, 22, 10, key="of_cq")
-        with col_res3:
-            st.markdown("**🛠️ Constructores**")
-            for i in range(1, 4): oficial[f"c{i}"] = st.text_input(f"Oficial Const {i}°", key=f"of_c{i}")
+        # 1. GATEKEEPER (CANDADO)
+        pwd = st.text_input("🔑 Ingrese Clave de Comisario:", type="password")
         
-        st.divider()
-        
-        # 2. SELECCIÓN DE PILOTO Y RECUPERACIÓN AUTOMÁTICA
-        st.subheader("2. CALCULAR PUNTOS DE PILOTO")
-        c_user, c_pin = st.columns(2)
-        piloto_calc = c_user.selectbox("Seleccionar Piloto:", PILOTOS_TORNEO)
-        
-        # BUSCAR DATOS AUTOMÁTICAMENTE (CON FUNCIÓN BLINDADA V4.0)
-        db_qualy, db_sprint, (db_race, db_const) = recuperar_predicciones_piloto(piloto_calc, gp_calc)
-        
-        if db_qualy or db_race:
-            st.success(f"✅ Se encontraron predicciones guardadas de {piloto_calc}")
-        else:
-            st.warning(f"⚠️ {piloto_calc} NO ha enviado predicciones para {gp_calc} (o no se pudieron leer).")
-
-        # MOSTRAR PREDICCIONES
-        st.markdown(f"**Predicciones recuperadas de la Base de Datos para {piloto_calc}:**")
-        c_pred1, c_pred2, c_pred3 = st.columns(3)
-        
-        # Usamos valores por defecto si no hay datos
-        val_r = db_race if db_race else {}
-        val_q = db_qualy if db_qualy else {}
-        val_c = db_const if db_const else {}
-        val_s = db_sprint if db_sprint else {}
-        
-        with c_pred1:
-            st.write(f"**Carrera:** {val_r.get(1,'-')}, {val_r.get(2,'-')}, {val_r.get(3,'-')}, {val_r.get(4,'-')}, {val_r.get(5,'-')}")
-            st.write(f"**Colapinto R:** {val_r.get('col','-')}")
-        with c_pred2:
-            st.write(f"**Qualy:** {val_q.get(1,'-')}, {val_q.get(2,'-')}, {val_q.get(3,'-')}, {val_q.get(4,'-')}, {val_q.get(5,'-')}")
-            st.write(f"**Colapinto Q:** {val_q.get('col','-')}")
-        with c_pred3:
-            st.write(f"**Const:** {val_c.get(1,'-')}, {val_c.get(2,'-')}, {val_c.get(3,'-')}")
-        
-        if db_sprint:
-            st.info(f"⚡ Sprint: {val_s.get(1,'-')}, {val_s.get(2,'-')}, ...")
-        
-        # 3. OPCIONES EXTRAS
-        st.divider()
-        col_ex1, col_ex2 = st.columns(2)
-        with col_ex1:
-            aplicar_sancion = st.checkbox(f"❌ Sancionar a {piloto_calc} (-5 Pts)", value=False)
-        with col_ex2:
-            st.markdown("**¿Ganó alguna sesión?**")
-            gano_qualy = st.checkbox("🥇 Ganó Qualy", key="gq")
-            gano_sprint = st.checkbox("🥇 Ganó Sprint", key="gs")
-            gano_carrera = st.checkbox("🥇 Ganó Carrera", key="gr")
-
-        # 4. BOTÓN CALCULAR
-        if st.button("CALCULAR TOTAL AUTOMÁTICO", width='stretch'):
-            # Preparar diccionarios oficiales
-            of_r = {i: oficial[f"r{i}"] for i in range(1, 6)}
-            of_q = {i: oficial[f"q{i}"] for i in range(1, 6)}
-            of_c = {i: oficial[f"c{i}"] for i in range(1, 4)}
-            
-            # Calcular usando lo recuperado de la DB
-            pts_carrera = calcular_puntos("CARRERA", val_r, of_r, val_r.get('col'), oficial["col_r"])
-            pts_qualy = calcular_puntos("QUALY", val_q, of_q, val_q.get('col'), oficial["col_q"])
-            pts_const = calcular_puntos("CONSTRUCTORES", val_c, of_c)
-            pts_sprint = 0 # Agregar lógica sprint si fuese necesario
-            
-            total = pts_carrera + pts_qualy + pts_const + pts_sprint
-            if aplicar_sancion: total -= 5
-            
-            st.success(f"💰 PUNTOS TOTALES DE {piloto_calc}: **{total}**")
-            st.info(f"Desglose: Carrera ({pts_carrera}) + Qualy ({pts_qualy}) + Const ({pts_const})")
-            
-            # Guardar en estado para el botón de confirmar
-            st.session_state['total_calc'] = total
-            st.session_state['piloto_calc'] = piloto_calc
-
-        # 5. BOTÓN GUARDAR
-        if 'total_calc' in st.session_state:
+        if pwd == "2022": # CLAVE DE CHECO PEREZ
+            st.success("✅ ACCESO AUTORIZADO - MODO COMISARIO ACTIVO")
             st.divider()
-            pin_comisario = st.text_input("PIN Comisario para Guardar:", type="password")
-            if st.button(f"💾 GUARDAR {st.session_state['total_calc']} PTS EN TABLA"):
-                if pin_comisario == "2022": # PIN DE CHECO PEREZ
+            
+            # --- AQUÍ EMPIEZA LA CALCULADORA REAL (SOLO VISIBLE SI CLAVE OK) ---
+            
+            # 1. SELECCIÓN DE GP Y RESULTADOS OFICIALES
+            gp_calc = st.selectbox("Gran Premio a Calcular:", GPS_OFICIALES)
+            
+            st.subheader("1. RESULTADOS OFICIALES (FIA)")
+            oficial = {}; col_res1, col_res2, col_res3 = st.columns(3)
+            with col_res1:
+                st.markdown("**🏁 Carrera**")
+                for i in range(1, 6): oficial[f"r{i}"] = st.text_input(f"Oficial Carrera {i}°", key=f"of_r{i}")
+                oficial["col_r"] = st.number_input("Oficial Colapinto (Carrera)", 1, 22, 10, key="of_cr")
+            with col_res2:
+                st.markdown("**⏱️ Qualy**")
+                for i in range(1, 6): oficial[f"q{i}"] = st.text_input(f"Oficial Qualy {i}°", key=f"of_q{i}")
+                oficial["col_q"] = st.number_input("Oficial Colapinto (Qualy)", 1, 22, 10, key="of_cq")
+            with col_res3:
+                st.markdown("**🛠️ Constructores**")
+                for i in range(1, 4): oficial[f"c{i}"] = st.text_input(f"Oficial Const {i}°", key=f"of_c{i}")
+            
+            st.divider()
+            
+            # 2. SELECCIÓN DE PILOTO Y RECUPERACIÓN AUTOMÁTICA
+            st.subheader("2. CALCULAR PUNTOS DE PILOTO")
+            c_user, c_pin = st.columns(2)
+            piloto_calc = c_user.selectbox("Seleccionar Piloto:", PILOTOS_TORNEO)
+            
+            # BUSCAR DATOS AUTOMÁTICAMENTE (CON FUNCIÓN BLINDADA V4.0)
+            db_qualy, db_sprint, (db_race, db_const) = recuperar_predicciones_piloto(piloto_calc, gp_calc)
+            
+            if db_qualy or db_race:
+                st.success(f"✅ Se encontraron predicciones guardadas de {piloto_calc}")
+            else:
+                st.warning(f"⚠️ {piloto_calc} NO ha enviado predicciones para {gp_calc} (o no se pudieron leer).")
+
+            # MOSTRAR PREDICCIONES
+            st.markdown(f"**Predicciones recuperadas de la Base de Datos para {piloto_calc}:**")
+            c_pred1, c_pred2, c_pred3 = st.columns(3)
+            
+            # Usamos valores por defecto si no hay datos
+            val_r = db_race if db_race else {}
+            val_q = db_qualy if db_qualy else {}
+            val_c = db_const if db_const else {}
+            val_s = db_sprint if db_sprint else {}
+            
+            with c_pred1:
+                st.write(f"**Carrera:** {val_r.get(1,'-')}, {val_r.get(2,'-')}, {val_r.get(3,'-')}, {val_r.get(4,'-')}, {val_r.get(5,'-')}")
+                st.write(f"**Colapinto R:** {val_r.get('col','-')}")
+            with c_pred2:
+                st.write(f"**Qualy:** {val_q.get(1,'-')}, {val_q.get(2,'-')}, {val_q.get(3,'-')}, {val_q.get(4,'-')}, {val_q.get(5,'-')}")
+                st.write(f"**Colapinto Q:** {val_q.get('col','-')}")
+            with c_pred3:
+                st.write(f"**Const:** {val_c.get(1,'-')}, {val_c.get(2,'-')}, {val_c.get(3,'-')}")
+            
+            if db_sprint:
+                st.info(f"⚡ Sprint: {val_s.get(1,'-')}, {val_s.get(2,'-')}, ...")
+            
+            # 3. OPCIONES EXTRAS
+            st.divider()
+            col_ex1, col_ex2 = st.columns(2)
+            with col_ex1:
+                aplicar_sancion = st.checkbox(f"❌ Sancionar a {piloto_calc} (-5 Pts)", value=False)
+            with col_ex2:
+                st.markdown("**¿Ganó alguna sesión?**")
+                gano_qualy = st.checkbox("🥇 Ganó Qualy", key="gq")
+                gano_sprint = st.checkbox("🥇 Ganó Sprint", key="gs")
+                gano_carrera = st.checkbox("🥇 Ganó Carrera", key="gr")
+
+            # 4. BOTÓN CALCULAR
+            if st.button("CALCULAR TOTAL AUTOMÁTICO", width='stretch'):
+                # Preparar diccionarios oficiales
+                of_r = {i: oficial[f"r{i}"] for i in range(1, 6)}
+                of_q = {i: oficial[f"q{i}"] for i in range(1, 6)}
+                of_c = {i: oficial[f"c{i}"] for i in range(1, 4)}
+                
+                # Calcular usando lo recuperado de la DB
+                pts_carrera = calcular_puntos("CARRERA", val_r, of_r, val_r.get('col'), oficial["col_r"])
+                pts_qualy = calcular_puntos("QUALY", val_q, of_q, val_q.get('col'), oficial["col_q"])
+                pts_const = calcular_puntos("CONSTRUCTORES", val_c, of_c)
+                pts_sprint = 0 # Agregar lógica sprint si fuese necesario
+                
+                total = pts_carrera + pts_qualy + pts_const + pts_sprint
+                if aplicar_sancion: total -= 5
+                
+                st.success(f"💰 PUNTOS TOTALES DE {piloto_calc}: **{total}**")
+                st.info(f"Desglose: Carrera ({pts_carrera}) + Qualy ({pts_qualy}) + Const ({pts_const})")
+                
+                # Guardar en estado para el botón de confirmar
+                st.session_state['total_calc'] = total
+                st.session_state['piloto_calc'] = piloto_calc
+
+            # 5. BOTÓN GUARDAR
+            if 'total_calc' in st.session_state:
+                st.divider()
+                if st.button(f"💾 GUARDAR {st.session_state['total_calc']} PTS EN TABLA"):
                     with st.spinner("Actualizando posiciones..."):
                         ok, msg = actualizar_tabla_general(st.session_state['piloto_calc'], st.session_state['total_calc'], gano_qualy, gano_sprint, gano_carrera)
                     if ok: st.success(msg); st.balloons()
                     else: st.error(msg)
-                else: st.error("⛔ PIN INCORRECTO")
+                    
+        elif pwd:
+            st.error("⛔ ACCESO DENEGADO. Solo el Comisario Checo Pérez puede ver las predicciones antes del Domingo.")
+            st.stop()
 
-    # --- TABLA DE POSICIONES ---
+    # --- TABLA DE POSICIONES (V3.0 LEÍDA DE DB) ---
     elif opcion == "📊 Tabla de Posiciones":
         st.title("TABLA GENERAL 2026")
         
