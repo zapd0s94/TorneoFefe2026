@@ -12,56 +12,34 @@ import streamlit.components.v1 as components
 
 def agregar_flecha_arriba():
     """
-    Agrega un botón flotante en la esquina inferior derecha.
-    CORRECCIÓN: Se movió a 'bottom: 100px' y usa lógica JS específica para Streamlit.
+    Agrega un botón flotante que fuerza el scroll buscando el contenedor específico de Streamlit.
     """
     st.markdown("""
-        <style>
-            .floating-arrow {
-                position: fixed;
-                bottom: 100px;
-                right: 20px;
-                z-index: 999999;
-                background-color: #FFD700;
-                color: #000000;
-                border: 2px solid #FFFFFF;
-                border-radius: 50%;
-                width: 60px;
-                height: 60px;
-                font-size: 30px;
+        <div style="position: fixed; bottom: 100px; right: 20px; z-index: 999999;">
+            <button onclick="
+                var view = window.parent.document.querySelector('[data-testid=\'stAppViewContainer\']');
+                if (view) {
+                    view.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            " 
+            style="
+                background-color: #FFD700; 
+                color: #000000; 
+                border: 2px solid #FFFFFF; 
+                border-radius: 50%; 
+                width: 60px; 
+                height: 60px; 
+                font-size: 30px; 
                 font-weight: bold;
-                cursor: pointer;
+                cursor: pointer; 
                 box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                transition: transform 0.2s, background-color 0.2s;
-            }
-            .floating-arrow:hover {
-                transform: scale(1.1);
-                background-color: #FFEA00;
-            }
-            .floating-arrow:active {
-                transform: scale(0.95);
-            }
-        </style>
-        
-        <button class="floating-arrow" onclick="scrollToTop()" title="Volver Arriba">
+            " title="Volver Arriba">
             ⬆️
-        </button>
-
-        <script>
-            function scrollToTop() {
-                // Intenta encontrar el contenedor principal de Streamlit
-                var container = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
-                if (container) {
-                    container.scrollTo({top: 0, behavior: 'smooth'});
-                } else {
-                    // Fallback por si cambia la estructura
-                    window.parent.scrollTo({top: 0, behavior: 'smooth'});
-                }
-            }
-        </script>
+            </button>
+        </div>
     """, unsafe_allow_html=True)
 
 def scroll_to_top():
