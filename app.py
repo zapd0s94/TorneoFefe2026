@@ -9,58 +9,51 @@ import streamlit.components.v1 as components
 # ==============================================================================
 # 1. HERRAMIENTAS DE NAVEGACIÓN (LA FLECHA SALVADORA V9.0)
 # ==============================================================================
-
 def agregar_flecha_arriba():
     """
-    Agrega un botón flotante para volver arriba.
-    CORRECCIÓN TÉCNICA: Se eliminó 'window.parent' que bloqueaba el script.
-    Ahora ataca directamente al documento activo.
+    Agrega una flecha flotante que fuerza el scroll atacando 
+    todos los contenedores posibles de la ventana padre.
     """
     st.markdown("""
-        <style>
-            .scroll-btn {
-                position: fixed;
-                bottom: 100px;
-                right: 20px;
-                z-index: 99999;
-                background-color: #FFD700;
-                color: black;
-                border: 2px solid white;
-                border-radius: 50%;
-                width: 60px;
-                height: 60px;
-                font-size: 30px;
-                font-weight: bold;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
-                transition: transform 0.2s;
-            }
-            .scroll-btn:active { transform: scale(0.9); }
-        </style>
-        
-        <button class="scroll-btn" onclick="scrollearArriba()">
-            ⬆️
-        </button>
-
         <script>
-            function scrollearArriba() {
-                // 1. Busca el contenedor específico de Streamlit
-                var container = document.querySelector('[data-testid="stAppViewContainer"]');
+            function bombardeoDeScroll() {
+                // Lista de todos los posibles contenedores que pueden tener scroll
+                var targets = [
+                    window.parent.document.querySelector('[data-testid="stAppViewContainer"]'),
+                    window.parent.document.querySelector('.main'),
+                    window.parent.document.body,
+                    window.parent.document.documentElement
+                ];
                 
-                // 2. Fuerza el scroll a 0
-                if (container) {
-                    container.scrollTop = 0;
-                }
-                
-                // 3. Respaldo para navegadores móviles (Safari/Chrome Mobile)
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0; 
-                document.documentElement.scrollTop = 0; 
+                // Forzamos a CERO a cualquiera que exista
+                targets.forEach(function(t) {
+                    if (t) {
+                        try { t.scrollTop = 0; } catch(e){}
+                        try { t.scrollTo({top: 0, behavior: 'auto'}); } catch(e){}
+                    }
+                });
             }
         </script>
+        
+        <div style="position: fixed; bottom: 30px; right: 20px; z-index: 999999;">
+            <div onclick="bombardeoDeScroll()" style="
+                background-color: #FFD700; 
+                color: #000000; 
+                width: 60px; 
+                height: 60px; 
+                border-radius: 50%; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                font-size: 30px; 
+                font-weight: bold; 
+                cursor: pointer; 
+                box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+                border: 3px solid #FFFFFF;
+            " title="SUBIR AHORA">
+                ⬆️
+            </div>
+        </div>
     """, unsafe_allow_html=True)
     
 def scroll_to_top():
