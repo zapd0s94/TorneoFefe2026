@@ -7,73 +7,59 @@ from google.oauth2.service_account import Credentials
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# 1. HERRAMIENTAS DE NAVEGACIÓN (LA FLECHA ANCLA - INFALIBLE)
+# 1. HERRAMIENTAS DE NAVEGACIÓN (TÉCNICA DE ANCLA HTML)
 # ==============================================================================
 
 def agregar_flecha_arriba():
     """
-    Botón flotante que busca el ID 'inicio_pagina' y hace scroll hasta él.
-    Posición ajustada para que no lo tape la interfaz del celular.
+    Agrega un botón flotante usando HTML PURO.
+    Funciona como un hipervínculo que busca el ID 'inicio_app' arriba de todo.
     """
     st.markdown("""
         <style>
-            .floating-btn {
+            .floating-arrow {
                 position: fixed;
-                bottom: 90px;
+                bottom: 100px;
                 right: 20px;
-                z-index: 999999;
+                z-index: 9999999;
                 background-color: #FFD700;
                 color: #000000;
                 border: 2px solid #FFFFFF;
                 border-radius: 50%;
                 width: 60px;
                 height: 60px;
+                text-align: center;
+                line-height: 55px; /* Centra la flecha verticalmente */
                 font-size: 30px;
                 font-weight: bold;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
+                text-decoration: none; /* Saca el subrayado de link */
                 box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
                 transition: transform 0.1s;
-                text-decoration: none;
+                display: block;
             }
-            .floating-btn:active { 
+            .floating-arrow:active { 
                 transform: scale(0.9); 
             }
-            .floating-btn:hover {
+            .floating-arrow:hover {
                 background-color: #FFEA00;
+                color: #000000;
             }
         </style>
         
-        <a onclick="document.getElementById('inicio_pagina').scrollIntoView({behavior: 'smooth'});" class="floating-btn" title="Volver Arriba">
+        <a href="#inicio_app" class="floating-arrow" title="Volver Arriba">
             ⬆️
         </a>
     """, unsafe_allow_html=True)
 
-def scroll_to_top_auto():
+def scroll_to_top():
     """
-    Fuerza el scroll al inicio automáticamente al cargar (para el cambio de menú).
+    Script de respaldo para el cambio de menú.
     """
     js = """
     <script>
-        function autoScroll() {
-            try {
-                var topDiv = window.parent.document.getElementById('inicio_pagina');
-                if (topDiv) {
-                    topDiv.scrollIntoView();
-                } else {
-                    // Fallback si no encuentra el ID, intenta scroll general
-                    window.parent.scrollTo(0, 0);
-                    var container = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
-                    if (container) container.scrollTop = 0;
-                }
-            } catch(e) {}
-        }
-        // Intentos múltiples para asegurar la carga
-        setTimeout(autoScroll, 100);
-        setTimeout(autoScroll, 500);
-        setTimeout(autoScroll, 800);
+        window.scrollTo(0,0);
+        var main = window.parent.document.querySelector(".main");
+        if(main) { main.scrollTop = 0; }
     </script>
     """
     components.html(js, height=0)
@@ -85,6 +71,7 @@ def scroll_to_top_auto():
 def conectar_google_sheets(nombre_hoja="sheet1"):
     """
     Conecta con la API de Google Sheets.
+    Permite elegir entre la hoja de 'Predicciones' (sheet1) o 'Posiciones'.
     """
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -100,12 +87,13 @@ def conectar_google_sheets(nombre_hoja="sheet1"):
             
         client = gspread.authorize(creds)
         
+        # Selección de hoja con manejo de errores
         try:
             if nombre_hoja == "Posiciones":
                 return client.open("TorneoFefe2026_DB").worksheet("Posiciones")
             else:
                 return client.open("TorneoFefe2026_DB").sheet1
-        except:
+        except gspread.WorksheetNotFound:
             return None
             
     except Exception as e:
@@ -113,7 +101,7 @@ def conectar_google_sheets(nombre_hoja="sheet1"):
 
 def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
     """
-    Guarda las predicciones en la hoja principal.
+    Guarda las predicciones en la hoja principal (sheet1).
     """
     sheet = conectar_google_sheets("sheet1")
     if sheet is None:
@@ -125,7 +113,7 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
         for fila in registros[1:]:
             if len(fila) > 3:
                 if fila[1] == usuario and fila[2] == gp and fila[3] == etapa:
-                    return False, f"⛔ ERROR: Ya enviaste la fase de {etapa} para el {gp}. No se permiten reenvíos."
+                    return False, f"⛔ ERROR DE SEGURIDAD: Ya enviaste la fase de {etapa} para el {gp}. No se permiten reenvíos."
     except Exception as e:
         return False, f"Error técnico validando duplicados: {e}"
 
@@ -133,8 +121,10 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
     fecha_hora = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
+    # Estructura base: [Fecha, Usuario, GP, Etapa]
     row = [fecha_hora, usuario, gp, etapa]
     
+    # LÓGICA DE COLUMNAS (Mantiene compatibilidad con tu DB actual)
     if etapa == "QUALY":
         # Indices 4 a 8: Q1-Q5
         row.extend([datos.get(i, "") for i in range(1, 6)])
@@ -161,12 +151,14 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
         # Indices 21 a 23: Constructores
         row.extend([datos.get(f"c{i}", "") for i in range(1, 4)])
         
+        # Indices 24-25: Campeones (Solo Australia)
         if camp_data:
             row.append(camp_data.get("piloto", ""))
             row.append(camp_data.get("equipo", ""))
         else:
             row.extend(["", ""])
 
+    # --- GUARDADO ---
     try:
         sheet.append_row(row)
         return True, f"¡Excelente! Tu predicción de {etapa} ha sido guardada."
@@ -175,9 +167,14 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
 
 def recuperar_predicciones_piloto(usuario, gp):
     """
-    Recupera predicciones de la DB de forma segura.
+    NUEVA FUNCIÓN V4.0 (CORREGIDA):
+    Lee la base de datos y busca qué votó el piloto.
+    ARREGLO: Devuelve siempre una estructura válida (None, None, (None, None))
+    para evitar que la aplicación explote si no hay datos.
     """
     sheet = conectar_google_sheets("sheet1")
+    
+    # SI FALLA LA CONEXION, DEVOLVER VACÍOS SEGUROS
     if not sheet: 
         return None, None, (None, None)
     
@@ -195,52 +192,64 @@ def recuperar_predicciones_piloto(usuario, gp):
     found_s = False
     found_r = False
     
+    # Recorremos la DB buscando filas que coincidan con Usuario + GP
     for row in registros[1:]:
         if len(row) > 3 and row[1] == usuario and row[2] == gp:
             etapa = row[3]
             
             if etapa == "QUALY":
+                # Qualy está en indices 4 a 8 (Columnas E,F,G,H,I)
+                # Colapinto Q en indice 9 (Columna J)
                 for i in range(1, 6): 
                     if len(row) > 3+i: data_q[i] = row[3+i] 
                 if len(row) > 9: data_q["col"] = row[9]
                 found_q = True
                 
             elif etapa == "SPRINT":
+                # Sprint está en indices 10 a 14 (Columnas K,L,M,N,O)
                 for i in range(1, 6): 
                     if len(row) > 9+i: data_s[i] = row[9+i]
                 found_s = True
                 
             elif etapa == "CARRERA":
+                # Carrera está en indices 15 a 19 (Columnas P,Q,R,S,T)
                 for i in range(1, 6): 
                     if len(row) > 14+i: data_r[i] = row[14+i]
                 if len(row) > 20: data_r["col"] = row[20]
+                
+                # Constructores en indices 21 a 23 (Columnas V,W,X)
                 if len(row) > 21: data_c[1] = row[21]
                 if len(row) > 22: data_c[2] = row[22]
                 if len(row) > 23: data_c[3] = row[23]
                 found_r = True
+    
+    # RETORNOS SEGUROS
+    res_q = data_q if found_q else None
+    res_s = data_s if found_s else None
+    res_r = (data_r, data_c) if found_r else (None, None)
                 
-    return (data_q if found_q else None, 
-            data_s if found_s else None, 
-            (data_r, data_c) if found_r else (None, None))
+    return res_q, res_s, res_r
 
 def actualizar_tabla_general(piloto, puntos_nuevos, gano_qualy, gano_sprint, gano_carrera):
     """
-    Actualiza la tabla de posiciones acumulada.
+    Suma los puntos calculados a la Tabla General ('Posiciones').
     """
     sheet = conectar_google_sheets("Posiciones")
     if sheet is None: return False, "Error al conectar con hoja Posiciones."
     
     try:
         registros = sheet.get_all_records()
+        # Verificar si la hoja está vacía o mal formateada
         if not registros and len(sheet.get_all_values()) < 2:
-             return False, "La hoja Posiciones parece vacía."
+             return False, "La hoja Posiciones parece vacía o sin títulos."
 
         cell = sheet.find(piloto)
         if not cell:
-            return False, f"No se encontró al piloto {piloto}."
+            return False, f"No se encontró al piloto {piloto} en la hoja Posiciones."
             
         fila = cell.row
         
+        # Leer valores actuales (Celdas B, C, D, E)
         try: pts_actuales = int(sheet.cell(fila, 2).value or 0)
         except: pts_actuales = 0
         
@@ -253,17 +262,19 @@ def actualizar_tabla_general(piloto, puntos_nuevos, gano_qualy, gano_sprint, gan
         try: carrera_actual = int(sheet.cell(fila, 5).value or 0)
         except: carrera_actual = 0
         
+        # Sumar lo nuevo
         nuevo_pts = pts_actuales + puntos_nuevos
         nueva_qualy = qualy_actual + (1 if gano_qualy else 0)
         nueva_sprint = sprint_actual + (1 if gano_sprint else 0)
         nueva_carrera = carrera_actual + (1 if gano_carrera else 0)
         
+        # Guardar
         sheet.update_cell(fila, 2, nuevo_pts)
         sheet.update_cell(fila, 3, nueva_qualy)
         sheet.update_cell(fila, 4, nueva_sprint)
         sheet.update_cell(fila, 5, nueva_carrera)
         
-        return True, f"✅ {piloto} ACTUALIZADO: +{puntos_nuevos} Pts (Total: {nuevo_pts})"
+        return True, f"✅ {piloto} ACTUALIZADO: +{puntos_nuevos} Pts (Total acumulado: {nuevo_pts})"
         
     except Exception as e:
         return False, f"Error actualizando tabla: {e}"
@@ -301,7 +312,7 @@ HORARIOS_CARRERA = {
 
 def verificar_estado_gp(gp_seleccionado):
     """
-    Verifica si estamos dentro del tiempo permitido.
+    Verifica si estamos dentro del tiempo permitido (Desde 72hs antes hasta 1 hora antes).
     """
     if gp_seleccionado not in HORARIOS_CARRERA:
         return "ABIERTO (SIN FECHA)", True 
@@ -322,7 +333,7 @@ def verificar_estado_gp(gp_seleccionado):
 
 def calcular_puntos(tipo, prediccion, oficial, colapinto_pred=None, colapinto_real=None):
     """
-    Motor matemático para calcular los puntos.
+    Motor matemático para calcular los puntos en la calculadora.
     """
     puntos = 0
     aciertos = 0
@@ -343,6 +354,7 @@ def calcular_puntos(tipo, prediccion, oficial, colapinto_pred=None, colapinto_re
     max_pos = 3 if tipo == "CONSTRUCTORES" else 5
     
     for i in range(1, max_pos + 1):
+        # Conversión a string y strip para evitar errores si viene un None
         p_user = str(prediccion.get(i, "")).strip().lower()
         p_real = str(oficial.get(i, "")).strip().lower()
         
@@ -485,6 +497,7 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
+
 
 # ==============================================================================
 # 5. DATOS DEL TORNEO
@@ -678,7 +691,7 @@ CALENDARIO_VISUAL = [
 
 def main():
     # --- ANCLA INVISIBLE PARA EL SCROLL (LA CLAVE) ---
-    st.markdown('<div id="inicio_pagina"></div>', unsafe_allow_html=True)
+    st.markdown('<div id="inicio_app"></div>', unsafe_allow_html=True)
     
     st.sidebar.title("🏁 MENU PRINCIPAL")
     
@@ -700,10 +713,10 @@ def main():
         "🏆 Muro de Campeones"
     ])
     
-    # 1. ACTIVAR SCROLL AUTOMÁTICO
-    scroll_to_top_auto()
+    # 1. ACTIVAR SCROLL AUTOMÁTICO (Nueva Versión)
+    scroll_to_top()
     
-    # 2. ACTIVAR LA FLECHA FLOTANTE (SOLUCIÓN ANCLA)
+    # 2. ACTIVAR LA FLECHA FLOTANTE (SOLUCIÓN ANCLA HTML)
     agregar_flecha_arriba()
 
     # --- INICIO ---
