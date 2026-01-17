@@ -7,18 +7,19 @@ from google.oauth2.service_account import Credentials
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# 1. TRUCOS DE MAGIA (SCROLL MÓVIL - VERSIÓN ULTRA NUCLEAR)
+# 1. TRUCOS DE MAGIA (SCROLL MÓVIL - VERSIÓN FINAL COMPATIBLE)
 # ==============================================================================
 
 def scroll_to_top():
     """
     Fuerza el scroll hacia arriba.
-    Versión compatible: Usa concatenación (+) para evitar errores de sintaxis en VS Code.
+    Usamos concatenación de strings (+) en lugar de f-strings para evitar
+    conflictos de sintaxis con las llaves {} de JavaScript en VS Code.
     """
     # Generamos un ID único basado en la hora actual
     unique_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
     
-    # Creamos el script sumando textos para que Python no se confunda con los corchetes {}
+    # Creamos el script sumando textos. Esto evita los errores rojos en el editor.
     js = """
     <script>
         // ID unico para forzar recarga: """ + unique_id + """
@@ -148,8 +149,8 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
 
 def recuperar_predicciones_piloto(usuario, gp):
     """
-    NUEVA FUNCIÓN V4.0 (CORREGIDA):
     Lee la base de datos y busca qué votó el piloto.
+    ARREGLO: Devuelve siempre una estructura válida para evitar errores.
     """
     sheet = conectar_google_sheets("sheet1")
     
@@ -177,26 +178,22 @@ def recuperar_predicciones_piloto(usuario, gp):
             etapa = row[3]
             
             if etapa == "QUALY":
-                # Qualy está en indices 4 a 8 (Columnas E,F,G,H,I)
-                # Colapinto Q en indice 9 (Columna J)
                 for i in range(1, 6): 
                     if len(row) > 3+i: data_q[i] = row[3+i] 
                 if len(row) > 9: data_q["col"] = row[9]
                 found_q = True
                 
             elif etapa == "SPRINT":
-                # Sprint está en indices 10 a 14 (Columnas K,L,M,N,O)
                 for i in range(1, 6): 
                     if len(row) > 9+i: data_s[i] = row[9+i]
                 found_s = True
                 
             elif etapa == "CARRERA":
-                # Carrera está en indices 15 a 19 (Columnas P,Q,R,S,T)
                 for i in range(1, 6): 
                     if len(row) > 14+i: data_r[i] = row[14+i]
                 if len(row) > 20: data_r["col"] = row[20]
                 
-                # Constructores en indices 21 a 23 (Columnas V,W,X)
+                # Constructores
                 if len(row) > 21: data_c[1] = row[21]
                 if len(row) > 22: data_c[2] = row[22]
                 if len(row) > 23: data_c[3] = row[23]
@@ -513,150 +510,30 @@ GRILLA_2026 = {
 }
 
 CALENDARIO_VISUAL = [
-    {
-        "Fecha": "06-08 Mar", 
-        "Gran Premio": "GP Australia", 
-        "Circuito": "Melbourne", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "13-15 Mar", 
-        "Gran Premio": "GP China", 
-        "Circuito": "Shanghai", 
-        "Formato": "⚡ SPRINT"
-    },
-    {
-        "Fecha": "27-29 Mar", 
-        "Gran Premio": "GP Japón", 
-        "Circuito": "Suzuka", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "10-12 Abr", 
-        "Gran Premio": "GP Bahréin", 
-        "Circuito": "Sakhir", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "17-19 Abr", 
-        "Gran Premio": "GP Arabia Saudita", 
-        "Circuito": "Jeddah", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "01-03 May", 
-        "Gran Premio": "GP Miami", 
-        "Circuito": "Miami", 
-        "Formato": "⚡ SPRINT"
-    },
-    {
-        "Fecha": "22-24 May", 
-        "Gran Premio": "GP Canadá", 
-        "Circuito": "Montreal", 
-        "Formato": "⚡ SPRINT"
-    },
-    {
-        "Fecha": "05-07 Jun", 
-        "Gran Premio": "GP Mónaco", 
-        "Circuito": "Montecarlo", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "12-14 Jun", 
-        "Gran Premio": "GP España", 
-        "Circuito": "Barcelona", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "26-28 Jun", 
-        "Gran Premio": "GP Austria", 
-        "Circuito": "Spielberg", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "03-05 Jul", 
-        "Gran Premio": "GP Reino Unido", 
-        "Circuito": "Silverstone", 
-        "Formato": "⚡ SPRINT"
-    },
-    {
-        "Fecha": "17-19 Jul", 
-        "Gran Premio": "GP Bélgica", 
-        "Circuito": "Spa", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "24-26 Jul", 
-        "Gran Premio": "GP Hungría", 
-        "Circuito": "Budapest", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "21-23 Ago", 
-        "Gran Premio": "GP Países Bajos", 
-        "Circuito": "Zandvoort", 
-        "Formato": "⚡ SPRINT"
-    },
-    {
-        "Fecha": "04-06 Sep", 
-        "Gran Premio": "GP Italia", 
-        "Circuito": "Monza", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "11-13 Sep", 
-        "Gran Premio": "GP Madrid", 
-        "Circuito": "Madrid", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "25-27 Sep", 
-        "Gran Premio": "GP Azerbaiyán", 
-        "Circuito": "Bakú", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "09-11 Oct", 
-        "Gran Premio": "GP Singapur", 
-        "Circuito": "Marina Bay", 
-        "Formato": "⚡ SPRINT"
-    },
-    {
-        "Fecha": "23-25 Oct", 
-        "Gran Premio": "GP Estados Unidos", 
-        "Circuito": "Austin", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "30-01 Nov", 
-        "Gran Premio": "GP México", 
-        "Circuito": "Hermanos Rodríguez", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "06-08 Nov", 
-        "Gran Premio": "GP Brasil", 
-        "Circuito": "Interlagos", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "19-21 Nov", 
-        "Gran Premio": "GP Las Vegas", 
-        "Circuito": "Las Vegas", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "27-29 Nov", 
-        "Gran Premio": "GP Qatar", 
-        "Circuito": "Lusail", 
-        "Formato": "Clásico"
-    },
-    {
-        "Fecha": "04-06 Dic", 
-        "Gran Premio": "GP Abu Dabi", 
-        "Circuito": "Yas Marina", 
-        "Formato": "Clásico"
-    },
+    {"Fecha": "06-08 Mar", "Gran Premio": "GP Australia", "Circuito": "Melbourne", "Formato": "Clásico"},
+    {"Fecha": "13-15 Mar", "Gran Premio": "GP China", "Circuito": "Shanghai", "Formato": "⚡ SPRINT"},
+    {"Fecha": "27-29 Mar", "Gran Premio": "GP Japón", "Circuito": "Suzuka", "Formato": "Clásico"},
+    {"Fecha": "10-12 Abr", "Gran Premio": "GP Bahréin", "Circuito": "Sakhir", "Formato": "Clásico"},
+    {"Fecha": "17-19 Abr", "Gran Premio": "GP Arabia Saudita", "Circuito": "Jeddah", "Formato": "Clásico"},
+    {"Fecha": "01-03 May", "Gran Premio": "GP Miami", "Circuito": "Miami", "Formato": "⚡ SPRINT"},
+    {"Fecha": "22-24 May", "Gran Premio": "GP Canadá", "Circuito": "Montreal", "Formato": "⚡ SPRINT"},
+    {"Fecha": "05-07 Jun", "Gran Premio": "GP Mónaco", "Circuito": "Montecarlo", "Formato": "Clásico"},
+    {"Fecha": "12-14 Jun", "Gran Premio": "GP España", "Circuito": "Barcelona", "Formato": "Clásico"},
+    {"Fecha": "26-28 Jun", "Gran Premio": "GP Austria", "Circuito": "Spielberg", "Formato": "Clásico"},
+    {"Fecha": "03-05 Jul", "Gran Premio": "GP Reino Unido", "Circuito": "Silverstone", "Formato": "⚡ SPRINT"},
+    {"Fecha": "17-19 Jul", "Gran Premio": "GP Bélgica", "Circuito": "Spa", "Formato": "Clásico"},
+    {"Fecha": "24-26 Jul", "Gran Premio": "GP Hungría", "Circuito": "Budapest", "Formato": "Clásico"},
+    {"Fecha": "21-23 Ago", "Gran Premio": "GP Países Bajos", "Circuito": "Zandvoort", "Formato": "⚡ SPRINT"},
+    {"Fecha": "04-06 Sep", "Gran Premio": "GP Italia", "Circuito": "Monza", "Formato": "Clásico"},
+    {"Fecha": "11-13 Sep", "Gran Premio": "GP Madrid", "Circuito": "Madrid", "Formato": "Clásico"},
+    {"Fecha": "25-27 Sep", "Gran Premio": "GP Azerbaiyán", "Circuito": "Bakú", "Formato": "Clásico"},
+    {"Fecha": "09-11 Oct", "Gran Premio": "GP Singapur", "Circuito": "Marina Bay", "Formato": "⚡ SPRINT"},
+    {"Fecha": "23-25 Oct", "Gran Premio": "GP Estados Unidos", "Circuito": "Austin", "Formato": "Clásico"},
+    {"Fecha": "30-01 Nov", "Gran Premio": "GP México", "Circuito": "Hermanos Rodríguez", "Formato": "Clásico"},
+    {"Fecha": "06-08 Nov", "Gran Premio": "GP Brasil", "Circuito": "Interlagos", "Formato": "Clásico"},
+    {"Fecha": "19-21 Nov", "Gran Premio": "GP Las Vegas", "Circuito": "Las Vegas", "Formato": "Clásico"},
+    {"Fecha": "27-29 Nov", "Gran Premio": "GP Qatar", "Circuito": "Lusail", "Formato": "Clásico"},
+    {"Fecha": "04-06 Dic", "Gran Premio": "GP Abu Dabi", "Circuito": "Yas Marina", "Formato": "Clásico"},
 ]
 
 
@@ -884,13 +761,13 @@ def main():
     elif opcion == "🧮 Calculadora de Puntos":
         st.title("🧮 CENTRO DE CÓMPUTOS")
         
-        st.info("🔒 ÁREA RESTRINGIDA: Para evitar espionaje, se requiere autorización del Comisario.")
+        st.info("🔒 ÁREA RESTRINGIDA: Para evitar espionaje, se requiere autorización.")
         
         # 1. GATEKEEPER (CANDADO)
         pwd = st.text_input("🔑 Ingrese Clave de Comisario:", type="password")
         
-        if pwd == "2022": # CLAVE MAESTRA
-            st.success("✅ ACCESO AUTORIZADO")
+        if pwd == "2022": # CLAVE DE CHECO PEREZ
+            st.success("✅ ACCESO AUTORIZADO - MODO COMISARIO ACTIVO")
             st.divider()
             
             # --- AQUÍ EMPIEZA LA CALCULADORA REAL (SOLO VISIBLE SI CLAVE OK) ---
@@ -991,9 +868,9 @@ def main():
                         ok, msg = actualizar_tabla_general(st.session_state['piloto_calc'], st.session_state['total_calc'], gano_qualy, gano_sprint, gano_carrera)
                     if ok: st.success(msg); st.balloons()
                     else: st.error(msg)
-        
+                    
         elif pwd:
-            st.error("⛔ ACCESO DENEGADO.")
+            st.error("⛔ ACCESO DENEGADO. Solo el Comisario Checo Pérez puede ver las predicciones antes del Domingo.")
             st.stop()
 
     # --- TABLA DE POSICIONES (V3.0 LEÍDA DE DB) ---
