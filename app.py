@@ -12,11 +12,16 @@ import streamlit.components.v1 as components
 
 def scroll_to_top():
     """
-    Fuerza el scroll hacia arriba usando múltiples intentos para vencer
-    la memoria de posición del navegador móvil.
+    Fuerza el scroll hacia arriba.
+    Versión compatible: Usa concatenación (+) para evitar errores de sintaxis en VS Code.
     """
+    # Generamos un ID único basado en la hora actual
+    unique_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    
+    # Creamos el script sumando textos para que Python no se confunda con los corchetes {}
     js = """
     <script>
+        // ID unico para forzar recarga: """ + unique_id + """
         function forceScroll() {
             var viewContainer = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
             if (viewContainer) {
