@@ -12,36 +12,57 @@ import streamlit.components.v1 as components
 
 def agregar_flecha_arriba():
     """
-    Agrega un botón flotante que fuerza el scroll buscando el contenedor específico de Streamlit.
+    Agrega un botón flotante para volver arriba.
+    CORRECCIÓN TÉCNICA: Se eliminó 'window.parent' que bloqueaba el script.
+    Ahora ataca directamente al documento activo.
     """
     st.markdown("""
-        <div style="position: fixed; bottom: 100px; right: 20px; z-index: 999999;">
-            <button onclick="
-                var view = window.parent.document.querySelector('[data-testid=\'stAppViewContainer\']');
-                if (view) {
-                    view.scrollTo({top: 0, behavior: 'smooth'});
-                }
-            " 
-            style="
-                background-color: #FFD700; 
-                color: #000000; 
-                border: 2px solid #FFFFFF; 
-                border-radius: 50%; 
-                width: 60px; 
-                height: 60px; 
-                font-size: 30px; 
+        <style>
+            .scroll-btn {
+                position: fixed;
+                bottom: 100px;
+                right: 20px;
+                z-index: 99999;
+                background-color: #FFD700;
+                color: black;
+                border: 2px solid white;
+                border-radius: 50%;
+                width: 60px;
+                height: 60px;
+                font-size: 30px;
                 font-weight: bold;
-                cursor: pointer; 
-                box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+                cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-            " title="Volver Arriba">
+                box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
+                transition: transform 0.2s;
+            }
+            .scroll-btn:active { transform: scale(0.9); }
+        </style>
+        
+        <button class="scroll-btn" onclick="scrollearArriba()">
             ⬆️
-            </button>
-        </div>
-    """, unsafe_allow_html=True)
+        </button>
 
+        <script>
+            function scrollearArriba() {
+                // 1. Busca el contenedor específico de Streamlit
+                var container = document.querySelector('[data-testid="stAppViewContainer"]');
+                
+                // 2. Fuerza el scroll a 0
+                if (container) {
+                    container.scrollTop = 0;
+                }
+                
+                // 3. Respaldo para navegadores móviles (Safari/Chrome Mobile)
+                window.scrollTo(0, 0);
+                document.body.scrollTop = 0; 
+                document.documentElement.scrollTop = 0; 
+            }
+        </script>
+    """, unsafe_allow_html=True)
+    
 def scroll_to_top():
     """
     Intento automático de subir al cambiar de sección.
