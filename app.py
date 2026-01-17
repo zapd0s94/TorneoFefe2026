@@ -7,57 +7,85 @@ from google.oauth2.service_account import Credentials
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# 1. HERRAMIENTAS DE NAVEGACIÓN (LA FLECHA SALVADORA)
+# 1. HERRAMIENTAS DE NAVEGACIÓN (LA FLECHA SALVADORA V9.0)
 # ==============================================================================
 
 def agregar_flecha_arriba():
     """
     Agrega un botón flotante en la esquina inferior derecha.
-    Al hacer clic, lleva al usuario al inicio de la página inmediatamente.
+    CORRECCIÓN: Se movió a 'bottom: 100px' y usa lógica JS específica para Streamlit.
     """
     st.markdown("""
-        <button onclick="window.parent.scrollTo({top: 0, behavior: 'smooth'});" 
-        style="
-            position: fixed; 
-            bottom: 25px; 
-            right: 25px; 
-            z-index: 99999; 
-            background-color: #FFD700; 
-            color: #000000; 
-            border: 2px solid #FFFFFF; 
-            border-radius: 50%; 
-            width: 50px; 
-            height: 50px; 
-            font-size: 24px; 
-            font-weight: bold;
-            cursor: pointer; 
-            box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        " title="Volver Arriba">
-        ⬆️
+        <style>
+            .floating-arrow {
+                position: fixed;
+                bottom: 100px;
+                right: 20px;
+                z-index: 999999;
+                background-color: #FFD700;
+                color: #000000;
+                border: 2px solid #FFFFFF;
+                border-radius: 50%;
+                width: 60px;
+                height: 60px;
+                font-size: 30px;
+                font-weight: bold;
+                cursor: pointer;
+                box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: transform 0.2s, background-color 0.2s;
+            }
+            .floating-arrow:hover {
+                transform: scale(1.1);
+                background-color: #FFEA00;
+            }
+            .floating-arrow:active {
+                transform: scale(0.95);
+            }
+        </style>
+        
+        <button class="floating-arrow" onclick="scrollToTop()" title="Volver Arriba">
+            ⬆️
         </button>
+
+        <script>
+            function scrollToTop() {
+                // Intenta encontrar el contenedor principal de Streamlit
+                var container = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
+                if (container) {
+                    container.scrollTo({top: 0, behavior: 'smooth'});
+                } else {
+                    // Fallback por si cambia la estructura
+                    window.parent.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            }
+        </script>
     """, unsafe_allow_html=True)
 
 def scroll_to_top():
     """
-    Intento automático de subir (Script invisible).
-    Si este falla, el usuario tiene la FLECHA manual.
+    Intento automático de subir al cambiar de sección.
     """
     unique_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
     js = """
     <script>
-        // ID: """ + unique_id + """
+        // ID único: """ + unique_id + """
         function forceScroll() {
             try {
                 var viewContainer = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
-                if (viewContainer) { viewContainer.scrollTop = 0; }
+                if (viewContainer) { 
+                    viewContainer.scrollTop = 0; 
+                }
                 window.parent.scrollTo(0, 0);
             } catch(e) { console.log(e); }
         }
+        
+        // Ejecutar varias veces para asegurar
         setTimeout(forceScroll, 100);
-        setTimeout(forceScroll, 500);
+        setTimeout(forceScroll, 300);
+        setTimeout(forceScroll, 600);
     </script>
     """
     components.html(js, height=0)
@@ -69,6 +97,7 @@ def scroll_to_top():
 def conectar_google_sheets(nombre_hoja="sheet1"):
     """
     Conecta con la API de Google Sheets.
+    Permite elegir entre la hoja de 'Predicciones' (sheet1) o 'Posiciones'.
     """
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -84,12 +113,13 @@ def conectar_google_sheets(nombre_hoja="sheet1"):
             
         client = gspread.authorize(creds)
         
+        # Selección de hoja con manejo de errores
         try:
             if nombre_hoja == "Posiciones":
                 return client.open("TorneoFefe2026_DB").worksheet("Posiciones")
             else:
                 return client.open("TorneoFefe2026_DB").sheet1
-        except:
+        except gspread.WorksheetNotFound:
             return None
             
     except Exception as e:
@@ -97,7 +127,7 @@ def conectar_google_sheets(nombre_hoja="sheet1"):
 
 def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
     """
-    Guarda las predicciones en la hoja principal.
+    Guarda las predicciones en la hoja principal (sheet1).
     """
     sheet = conectar_google_sheets("sheet1")
     if sheet is None:
@@ -109,7 +139,7 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
         for fila in registros[1:]:
             if len(fila) > 3:
                 if fila[1] == usuario and fila[2] == gp and fila[3] == etapa:
-                    return False, f"⛔ ERROR: Ya enviaste la fase de {etapa} para el {gp}."
+                    return False, f"⛔ ERROR DE SEGURIDAD: Ya enviaste la fase de {etapa} para el {gp}. No se permiten reenvíos."
     except Exception as e:
         return False, f"Error técnico validando duplicados: {e}"
 
@@ -117,30 +147,44 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
     fecha_hora = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
+    # Estructura base: [Fecha, Usuario, GP, Etapa]
     row = [fecha_hora, usuario, gp, etapa]
     
+    # LÓGICA DE COLUMNAS (Mantiene compatibilidad con tu DB actual)
     if etapa == "QUALY":
+        # Indices 4 a 8: Q1-Q5
         row.extend([datos.get(i, "") for i in range(1, 6)])
+        # Indice 9: Colapinto Q
         row.append(datos.get("colapinto_q", ""))
+        # Relleno hasta el final
         row.extend([""] * 16)
 
     elif etapa == "SPRINT":
+        # Indices 4 a 9 vacíos (lugar de Qualy)
         row.extend([""] * 6)
+        # Indices 10 a 14: S1-S5
         row.extend([datos.get(i, "") for i in range(1, 6)])
+        # Relleno hasta el final
         row.extend([""] * 11)
 
     elif etapa == "CARRERA":
+        # Indices 4 a 14 vacíos (lugar de Qualy + Sprint)
         row.extend([""] * 11)
+        # Indices 15 a 19: R1-R5
         row.extend([datos.get(i, "") for i in range(1, 6)])
+        # Indice 20: Colapinto R
         row.append(datos.get("colapinto_r", ""))
+        # Indices 21 a 23: Constructores
         row.extend([datos.get(f"c{i}", "") for i in range(1, 4)])
         
+        # Indices 24-25: Campeones (Solo Australia)
         if camp_data:
             row.append(camp_data.get("piloto", ""))
             row.append(camp_data.get("equipo", ""))
         else:
             row.extend(["", ""])
 
+    # --- GUARDADO ---
     try:
         sheet.append_row(row)
         return True, f"¡Excelente! Tu predicción de {etapa} ha sido guardada."
@@ -149,9 +193,14 @@ def guardar_etapa(usuario, gp, etapa, datos, camp_data=None):
 
 def recuperar_predicciones_piloto(usuario, gp):
     """
-    Recupera predicciones de la DB de forma segura.
+    NUEVA FUNCIÓN V4.0 (CORREGIDA):
+    Lee la base de datos y busca qué votó el piloto.
+    ARREGLO: Devuelve siempre una estructura válida (None, None, (None, None))
+    para evitar que la aplicación explote si no hay datos.
     """
     sheet = conectar_google_sheets("sheet1")
+    
+    # SI FALLA LA CONEXION, DEVOLVER VACÍOS SEGUROS
     if not sheet: 
         return None, None, (None, None)
     
@@ -169,52 +218,64 @@ def recuperar_predicciones_piloto(usuario, gp):
     found_s = False
     found_r = False
     
+    # Recorremos la DB buscando filas que coincidan con Usuario + GP
     for row in registros[1:]:
         if len(row) > 3 and row[1] == usuario and row[2] == gp:
             etapa = row[3]
             
             if etapa == "QUALY":
+                # Qualy está en indices 4 a 8 (Columnas E,F,G,H,I)
+                # Colapinto Q en indice 9 (Columna J)
                 for i in range(1, 6): 
                     if len(row) > 3+i: data_q[i] = row[3+i] 
                 if len(row) > 9: data_q["col"] = row[9]
                 found_q = True
                 
             elif etapa == "SPRINT":
+                # Sprint está en indices 10 a 14 (Columnas K,L,M,N,O)
                 for i in range(1, 6): 
                     if len(row) > 9+i: data_s[i] = row[9+i]
                 found_s = True
                 
             elif etapa == "CARRERA":
+                # Carrera está en indices 15 a 19 (Columnas P,Q,R,S,T)
                 for i in range(1, 6): 
                     if len(row) > 14+i: data_r[i] = row[14+i]
                 if len(row) > 20: data_r["col"] = row[20]
+                
+                # Constructores en indices 21 a 23 (Columnas V,W,X)
                 if len(row) > 21: data_c[1] = row[21]
                 if len(row) > 22: data_c[2] = row[22]
                 if len(row) > 23: data_c[3] = row[23]
                 found_r = True
+    
+    # RETORNOS SEGUROS
+    res_q = data_q if found_q else None
+    res_s = data_s if found_s else None
+    res_r = (data_r, data_c) if found_r else (None, None)
                 
-    return (data_q if found_q else None, 
-            data_s if found_s else None, 
-            (data_r, data_c) if found_r else (None, None))
+    return res_q, res_s, res_r
 
 def actualizar_tabla_general(piloto, puntos_nuevos, gano_qualy, gano_sprint, gano_carrera):
     """
-    Actualiza la tabla de posiciones acumulada.
+    Suma los puntos calculados a la Tabla General ('Posiciones').
     """
     sheet = conectar_google_sheets("Posiciones")
     if sheet is None: return False, "Error al conectar con hoja Posiciones."
     
     try:
         registros = sheet.get_all_records()
+        # Verificar si la hoja está vacía o mal formateada
         if not registros and len(sheet.get_all_values()) < 2:
-             return False, "La hoja Posiciones parece vacía."
+             return False, "La hoja Posiciones parece vacía o sin títulos."
 
         cell = sheet.find(piloto)
         if not cell:
-            return False, f"No se encontró al piloto {piloto}."
+            return False, f"No se encontró al piloto {piloto} en la hoja Posiciones."
             
         fila = cell.row
         
+        # Leer valores actuales (Celdas B, C, D, E)
         try: pts_actuales = int(sheet.cell(fila, 2).value or 0)
         except: pts_actuales = 0
         
@@ -227,17 +288,19 @@ def actualizar_tabla_general(piloto, puntos_nuevos, gano_qualy, gano_sprint, gan
         try: carrera_actual = int(sheet.cell(fila, 5).value or 0)
         except: carrera_actual = 0
         
+        # Sumar lo nuevo
         nuevo_pts = pts_actuales + puntos_nuevos
         nueva_qualy = qualy_actual + (1 if gano_qualy else 0)
         nueva_sprint = sprint_actual + (1 if gano_sprint else 0)
         nueva_carrera = carrera_actual + (1 if gano_carrera else 0)
         
+        # Guardar
         sheet.update_cell(fila, 2, nuevo_pts)
         sheet.update_cell(fila, 3, nueva_qualy)
         sheet.update_cell(fila, 4, nueva_sprint)
         sheet.update_cell(fila, 5, nueva_carrera)
         
-        return True, f"✅ {piloto} ACTUALIZADO: +{puntos_nuevos} Pts (Total: {nuevo_pts})"
+        return True, f"✅ {piloto} ACTUALIZADO: +{puntos_nuevos} Pts (Total acumulado: {nuevo_pts})"
         
     except Exception as e:
         return False, f"Error actualizando tabla: {e}"
@@ -352,7 +415,7 @@ st.markdown("""
     header[data-testid="stHeader"] { background-color: #0e1117; }
     
     /* 2. TEXTOS */
-    .stMarkdown, .stText, p, li, label, h1, h2, h3, h4, h5, h6, span, div { 
+    .stMarkdown, .stText, p, li, label, h1, h2, h3, h4, span, div { 
         color: #E0E0E0 !important; 
         font-family: 'Segoe UI', sans-serif; 
     }
@@ -449,13 +512,14 @@ st.markdown("""
         border-radius: 8px; 
         margin-bottom: 20px; 
         font-weight: bold; 
-        border: 1px solid white;
-        transition: 0.3s;
+        border: 1px solid white; 
+        transition: 0.3s; 
     }
+    
     .reset-link:hover { 
         background-color: #FFD700; 
         color: black !important; 
-        border-color: #BF00FF;
+        border-color: #BF00FF; 
     }
     </style>
     """, unsafe_allow_html=True)
@@ -662,23 +726,22 @@ def main():
     
     opcion = st.sidebar.radio("Navegación:", [
         "🏠 Inicio & Historia", 
-        "📅 Calendario Oficial 2026",
+        "📅 Calendario Oficial 2026", 
         "🔒 Cargar Predicciones", 
-        "📊 Tabla de Posiciones",
-        "🧮 Calculadora de Puntos",
-        "🏎️ Pilotos y Escuderías 2026",
+        "📊 Tabla de Posiciones", 
+        "🧮 Calculadora de Puntos", 
+        "🏎️ Pilotos y Escuderías 2026", 
         "🌍 Historial por GP", 
-        "📜 Reglamento Oficial",
+        "📜 Reglamento Oficial", 
         "🏆 Muro de Campeones"
     ])
-
+    
     # 1. ACTIVAR SCROLL AUTOMÁTICO (Nueva Versión)
     scroll_to_top()
     
     # 2. ACTIVAR LA FLECHA FLOTANTE (SOLUCIÓN INFALIBLE)
     agregar_flecha_arriba()
 
-    # --- INICIO ---
     if opcion == "🏠 Inicio & Historia":
         st.markdown("<h1 style='text-align: center; color: #FFD700;'>🏆 TORNEO DE PREDICCIONES FEFE WOLF 2026🏆</h1>", unsafe_allow_html=True)
         st.markdown("<div style='text-align: center;'><b>© 2026 Derechos Reservados - Fundado por Checo Perez</b></div>", unsafe_allow_html=True)
